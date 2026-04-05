@@ -28,6 +28,11 @@ The first version should render a top-down view. Three.js is preferred over Canv
 
 This is a separate repository (`migratory-viewer`), not a worktree of migratory. The client shares zero source code with the Python simulation backend — it consumes a WebSocket API and renders. Its language, toolchain, build pipeline, and deployment are independent. The context-visualizer project establishes the precedent: separate repo, consumes a backend's API, has its own initiative/slice structure.
 
+See reference (`project-documents/user/reference`) for:
+* concept art which servers as a sort of 'ultimate future vision'
+* server protocol and config information
+* initial threejs prototype
+
 ## Refined Concept
 
 ### Problem & Motivation

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Migratory - Prototype 02 - Three.js Instanced Terrain</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; background: #1a1a1a; color: #ccc; }
+canvas { display: block; width: 100vw; height: 100vh; }
+.hud { position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 8px; pointer-events: none; }
+.hud .panel {
+  background: rgba(30,30,30,0.9); border: 1px solid #333; border-radius: 8px;
+  padding: 6px 10px; pointer-events: auto;
+}
+.hud label { font-size: 11px; color: #888; display: block; }
+.hud input[type="range"] { width: 90px; }
+.hud span { font-size: 12px; font-weight: 500; min-width: 32px; display: inline-block; }
+#fps {
+  position: absolute; bottom: 12px; right: 12px; font-size: 11px; color: #666;
+  background: rgba(30,30,30,0.9); border-radius: 8px; padding: 3px 8px; border: 1px solid #333;
+}
+#info {
+  position: absolute; bottom: 12px; left: 12px; font-size: 11px; color: #666;
+  background: rgba(30,30,30,0.9); border-radius: 8px; padding: 3px 8px; border: 1px solid #333;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <div class="panel">
+    <label>Agents</label>
+    <input type="range" min="20" max="2000" value="400" step="20" id="count" />
+    <span id="countOut">400</span>
+  </div>
+  <div class="panel">
+    <label>Cohesion</label>
+    <input type="range" min="0" max="100" value="40" step="1" id="coh" />
+  </div>
+  <div class="panel">
+    <label>Separation</label>
+    <input type="range" min="5" max="60" value="20" step="1" id="sep" />
+  </div>
+  <div class="panel">
+    <label>Panic radius</label>
+    <input type="range" min="5" max="40" value="15" step="1" id="panic" />
+  </div>
+</div>
+<div id="fps"></div>
+<div id="info">drag to orbit | scroll to zoom</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const W = window.innerWidth, H = window.innerHeight;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a1a);
+scene.fog = new THREE.Fog(0x1a1a1a, 80, 160);
+
+const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 500);
+camera.position.set(0, 55, 70);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(window.devicePixelRatio || 1);
+
+const ambLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(30, 50, 20);
+scene.add(dirLight);
+
+const WORLD = 80;
+const groundGeo = new THREE.PlaneGeometry(WORLD * 2, WORLD * 2, 40, 40);
+groundGeo.rotateX(-Math.PI / 2);
+const verts = groundGeo.attributes.position;
+for (let i = 0; i < verts.count; i++) {
+  const x = verts.getX(i), z = verts.getZ(i);
+  const y = Math.sin(x * 0.08) * Math.cos(z * 0.06) * 2.5 + Math.sin(x * 0.03 + z * 0.04) * 1.5;
+  verts.setY(i, y);
+}
+groundGeo.computeVertexNormals();
+const groundMat = new THREE.MeshLambertMaterial({ color: 0x2a3a2a });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+scene.add(ground);
+
+const MAX_AGENTS = 2000;
+const coneGeo = new THREE.ConeGeometry(0.3, 1.2, 5);
+coneGeo.rotateX(Math.PI / 2);
+const coneMat = new THREE.MeshLambertMaterial({ color: 0x5dcaa5 });
+const herdMesh = new THREE.InstancedMesh(coneGeo, coneMat, MAX_AGENTS);
+scene.add(herdMesh);
+
+const predGeo = new THREE.ConeGeometry(0.6, 2, 5);
+predGeo.rotateX(Math.PI / 2);
+const predMat = new THREE.MeshLambertMaterial({ color: 0xf09595 });
+const predMesh = new THREE.Mesh(predGeo, predMat);
+scene.add(predMesh);
+
+const dummy = new THREE.Object3D();
+
+const ax = new Float32Array(MAX_AGENTS);
+const ay = new Float32Array(MAX_AGENTS);
+const avx = new Float32Array(MAX_AGENTS);
+const avy = new Float32Array(MAX_AGENTS);
+const aspd = new Float32Array(MAX_AGENTS);
+
+function initAgents() {
+  for (let i = 0; i < MAX_AGENTS; i++) {
+    ax[i] = (Math.random() - 0.5) * 40;
+    ay[i] = (Math.random() - 0.5) * 40;
+    const a = Math.random() * Math.PI * 2;
+    const s = 0.08 + Math.random() * 0.06;
+    aspd[i] = s;
+    avx[i] = Math.cos(a) * s;
+    avy[i] = Math.sin(a) * s;
+  }
+}
+initAgents();
+
+let px = 30, py = 30, pvx = -0.05, pvy = -0.05, pcool = 0;
+
+function getY(x, z) {
+  return Math.sin(x * 0.08) * Math.cos(z * 0.06) * 2.5 + Math.sin(x * 0.03 + z * 0.04) * 1.5;
+}
+
+// Camera orbit controls
+let camAngle = 0, camDist = 85, camHeight = 55;
+let isDragging = false, lastMX = 0, lastMY = 0;
+canvas.addEventListener('mousedown', e => { isDragging = true; lastMX = e.clientX; lastMY = e.clientY; });
+window.addEventListener('mouseup', () => { isDragging = false; });
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  camAngle += (e.clientX - lastMX) * 0.008;
+  camHeight = Math.max(10, Math.min(100, camHeight - (e.clientY - lastMY) * 0.3));
+  lastMX = e.clientX; lastMY = e.clientY;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  camDist = Math.max(20, Math.min(160, camDist + e.deltaY * 0.08));
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) { isDragging = true; lastMX = e.touches[0].clientX; lastMY = e.touches[0].clientY; }
+}, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if (!isDragging || e.touches.length !== 1) return;
+  camAngle += (e.touches[0].clientX - lastMX) * 0.008;
+  camHeight = Math.max(10, Math.min(100, camHeight - (e.touches[0].clientY - lastMY) * 0.3));
+  lastMX = e.touches[0].clientX; lastMY = e.touches[0].clientY;
+}, { passive: true });
+canvas.addEventListener('touchend', () => { isDragging = false; }, { passive: true });
+
+// Slider binding
+document.getElementById('count').addEventListener('input', e => {
+  document.getElementById('countOut').textContent = e.target.value;
+});
+
+let frames = 0, lastFT = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const N = +document.getElementById('count').value;
+  const cohW = +document.getElementById('coh').value / 8000;
+  const sepD = +document.getElementById('sep').value * 0.15;
+  const panicR = +document.getElementById('panic').value;
+  const panicRSq = panicR * panicR;
+
+  // Update herd
+  for (let i = 0; i < N; i++) {
+    let cx = 0, cy = 0, cn = 0, sx = 0, sy = 0, alx = 0, aly = 0, aln = 0;
+    const step = N > 300 ? Math.floor(N / 300) : 1;
+    for (let j = 0; j < N; j += step) {
+      if (i === j) continue;
+      const dx = ax[j] - ax[i], dy = ay[j] - ay[i];
+      const dSq = dx * dx + dy * dy;
+      if (dSq < 225) {
+        cx += ax[j]; cy += ay[j]; cn++;
+        alx += avx[j]; aly += avy[j]; aln++;
+        if (dSq < sepD * sepD && dSq > 0) {
+          const d = Math.sqrt(dSq);
+          sx -= dx / d; sy -= dy / d;
+        }
+      }
+    }
+    if (cn > 0) {
+      avx[i] += (cx / cn - ax[i]) * cohW;
+      avy[i] += (cy / cn - ay[i]) * cohW;
+    }
+    avx[i] += sx * 0.008;
+    avy[i] += sy * 0.008;
+    if (aln > 0) {
+      avx[i] += (alx / aln - avx[i]) * 0.02;
+      avy[i] += (aly / aln - avy[i]) * 0.02;
+    }
+    const dpx = ax[i] - px, dpy = ay[i] - py;
+    const dpSq = dpx * dpx + dpy * dpy;
+    if (dpSq < panicRSq && dpSq > 0) {
+      const dp = Math.sqrt(dpSq);
+      const urg = 1 - dp / panicR;
+      avx[i] += (dpx / dp) * urg * 0.15;
+      avy[i] += (dpy / dp) * urg * 0.15;
+    }
+    if (ax[i] < -WORLD + 3) avx[i] += 0.02;
+    if (ax[i] > WORLD - 3) avx[i] -= 0.02;
+    if (ay[i] < -WORLD + 3) avy[i] += 0.02;
+    if (ay[i] > WORLD - 3) avy[i] -= 0.02;
+    let spd = Math.hypot(avx[i], avy[i]);
+    const maxS = aspd[i] * (dpSq < panicRSq ? 2.5 : 1);
+    if (spd > maxS) { avx[i] = (avx[i] / spd) * maxS; avy[i] = (avy[i] / spd) * maxS; }
+    ax[i] += avx[i]; ay[i] += avy[i];
+  }
+
+  // Update predator
+  if (pcool > 0) { pcool--; pvx *= 0.98; pvy *= 0.98; }
+  else {
+    let nd = Infinity, ni = -1;
+    for (let i = 0; i < N; i++) {
+      const d = (ax[i] - px) ** 2 + (ay[i] - py) ** 2;
+      if (d < nd) { nd = d; ni = i; }
+    }
+    if (ni >= 0) {
+      const dx = ax[ni] - px, dy = ay[ni] - py, d = Math.sqrt(nd);
+      if (d > 0) { pvx += (dx / d) * 0.004; pvy += (dy / d) * 0.004; }
+      if (d < 2) pcool = 90;
+    }
+  }
+  if (px < -WORLD + 3) pvx += 0.01;
+  if (px > WORLD - 3) pvx -= 0.01;
+  if (py < -WORLD + 3) pvy += 0.01;
+  if (py > WORLD - 3) pvy -= 0.01;
+  let ps = Math.hypot(pvx, pvy);
+  if (ps > 0.12) { pvx = (pvx / ps) * 0.12; pvy = (pvy / ps) * 0.12; }
+  px += pvx; py += pvy;
+
+  // Render instances
+  for (let i = 0; i < N; i++) {
+    dummy.position.set(ax[i], getY(ax[i], ay[i]) + 0.6, ay[i]);
+    dummy.rotation.set(0, -Math.atan2(avy[i], avx[i]) + Math.PI / 2, 0);
+    dummy.updateMatrix();
+    herdMesh.setMatrixAt(i, dummy.matrix);
+  }
+  herdMesh.count = N;
+  herdMesh.instanceMatrix.needsUpdate = true;
+
+  predMesh.position.set(px, getY(px, py) + 1, py);
+  predMesh.rotation.set(0, -Math.atan2(pvy, pvx) + Math.PI / 2, 0);
+
+  // Camera
+  camera.position.set(
+    Math.sin(camAngle) * camDist,
+    camHeight,
+    Math.cos(camAngle) * camDist
+  );
+  camera.lookAt(0, 0, 0);
+
+  renderer.render(scene, camera);
+
+  // FPS counter
+  frames++;
+  const now = performance.now();
+  if (now - lastFT > 500) {
+    document.getElementById('fps').textContent = Math.round(frames / ((now - lastFT) / 1000)) + ' fps | ' + N + ' agents';
+    frames = 0; lastFT = now;
+  }
+}
+animate();
+
+// Handle resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

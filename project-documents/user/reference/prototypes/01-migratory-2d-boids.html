@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Migratory - Prototype 01 - 2D Boid Simulation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; background: #f5f5f0; color: #333; padding: 1rem; }
+h1 { font-size: 16px; font-weight: 500; margin-bottom: 1rem; }
+.controls { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 1rem; }
+.control { flex: 1; min-width: 140px; }
+.control label { font-size: 13px; color: #666; display: block; margin-bottom: 4px; }
+.control .row { display: flex; align-items: center; gap: 8px; }
+.control input[type="range"] { flex: 1; }
+.control span { font-size: 13px; font-weight: 500; min-width: 28px; }
+.toolbar { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
+.toolbar button { font-size: 13px; padding: 4px 12px; cursor: pointer; }
+#stats { font-size: 12px; color: #999; }
+canvas { width: 100%; border-radius: 8px; border: 1px solid #ddd; background: #f0efe8; }
+</style>
+</head>
+<body>
+<h1>Migratory - Prototype 01: 2D Boid Herd + Predator</h1>
+<div class="controls">
+  <div class="control">
+    <label>Herd size</label>
+    <div class="row">
+      <input type="range" min="10" max="120" value="60" id="herdSize" step="5" />
+      <span id="herdSizeOut">60</span>
+    </div>
+  </div>
+  <div class="control">
+    <label>Cohesion</label>
+    <div class="row">
+      <input type="range" min="0" max="100" value="50" id="cohesion" step="1" />
+      <span id="cohesionOut">50</span>
+    </div>
+  </div>
+  <div class="control">
+    <label>Separation</label>
+    <div class="row">
+      <input type="range" min="5" max="60" value="25" id="separation" step="1" />
+      <span id="separationOut">25</span>
+    </div>
+  </div>
+  <div class="control">
+    <label>Alignment</label>
+    <div class="row">
+      <input type="range" min="0" max="100" value="40" id="alignment" step="1" />
+      <span id="alignmentOut">40</span>
+    </div>
+  </div>
+  <div class="control">
+    <label>Panic radius</label>
+    <div class="row">
+      <input type="range" min="30" max="200" value="100" id="panicRadius" step="5" />
+      <span id="panicRadiusOut">100</span>
+    </div>
+  </div>
+  <div class="control">
+    <label>Predator speed</label>
+    <div class="row">
+      <input type="range" min="50" max="200" value="110" id="predSpeed" step="5" />
+      <span id="predSpeedOut">110</span>
+    </div>
+  </div>
+</div>
+<div class="toolbar">
+  <button id="pauseBtn">pause</button>
+  <button id="resetBtn">reset</button>
+  <span id="stats"></span>
+</div>
+<canvas id="sim"></canvas>
+
+<script>
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = canvas.clientWidth;
+  H = Math.min(W * 0.6, 500);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+const P = {
+  get herdSize() { return +document.getElementById('herdSize').value },
+  get cohesion() { return +document.getElementById('cohesion').value / 2000 },
+  get separation() { return +document.getElementById('separation').value },
+  get alignment() { return +document.getElementById('alignment').value / 1000 },
+  get panicRadius() { return +document.getElementById('panicRadius').value },
+  get predSpeed() { return +document.getElementById('predSpeed').value / 100 }
+};
+
+const sliders = ['herdSize','cohesion','separation','alignment','panicRadius','predSpeed'];
+sliders.forEach(id => {
+  const el = document.getElementById(id);
+  const out = document.getElementById(id + 'Out');
+  el.addEventListener('input', () => { out.textContent = el.value; });
+});
+
+let herd = [], predator, paused = false;
+
+function rnd(a, b) { return a + Math.random() * (b - a); }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function wrap(v, max) { return ((v % max) + max) % max; }
+
+function createAgent(x, y, speed) {
+  const angle = rnd(0, Math.PI * 2);
+  return { x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, speed };
+}
+
+function initSim() {
+  const cx = W / 2, cy = H / 2;
+  herd = [];
+  for (let i = 0; i < 120; i++) {
+    herd.push(createAgent(cx + rnd(-80, 80), cy + rnd(-80, 80), rnd(1.2, 2.0)));
+  }
+  predator = createAgent(rnd(50, W - 50), rnd(50, H - 50), 2.2);
+  predator.cooldown = 0;
+  predator.hunting = true;
+}
+initSim();
+
+document.getElementById('resetBtn').addEventListener('click', initSim);
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? 'play' : 'pause';
+});
+
+function limitSpeed(a, max) {
+  const s = Math.hypot(a.vx, a.vy);
+  if (s > max) { a.vx = (a.vx / s) * max; a.vy = (a.vy / s) * max; }
+}
+
+function updateHerd() {
+  const n = P.herdSize;
+  const active = herd.slice(0, n);
+  const sep = P.separation;
+  const cohW = P.cohesion;
+  const aliW = P.alignment;
+  const pRad = P.panicRadius;
+  const pRadSq = pRad * pRad;
+
+  for (let i = 0; i < n; i++) {
+    const a = active[i];
+    let cx = 0, cy = 0, cn = 0;
+    let sx = 0, sy = 0;
+    let ax = 0, ay = 0, an = 0;
+
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      const b = active[j];
+      const d = dist(a, b);
+      if (d < 100) {
+        cx += b.x; cy += b.y; cn++;
+        ax += b.vx; ay += b.vy; an++;
+      }
+      if (d < sep && d > 0) {
+        sx += (a.x - b.x) / d;
+        sy += (a.y - b.y) / d;
+      }
+    }
+
+    if (cn > 0) {
+      a.vx += (cx / cn - a.x) * cohW;
+      a.vy += (cy / cn - a.y) * cohW;
+    }
+    a.vx += sx * 0.15;
+    a.vy += sy * 0.15;
+    if (an > 0) {
+      a.vx += (ax / an - a.vx) * aliW;
+      a.vy += (ay / an - a.vy) * aliW;
+    }
+
+    const dxP = a.x - predator.x, dyP = a.y - predator.y;
+    const dSqP = dxP * dxP + dyP * dyP;
+    if (dSqP < pRadSq && dSqP > 0) {
+      const dP = Math.sqrt(dSqP);
+      const urgency = 1 - (dP / pRad);
+      a.vx += (dxP / dP) * urgency * 3.5;
+      a.vy += (dyP / dP) * urgency * 3.5;
+    }
+
+    if (a.x < 20) a.vx += 0.5;
+    if (a.x > W - 20) a.vx -= 0.5;
+    if (a.y < 20) a.vy += 0.5;
+    if (a.y > H - 20) a.vy -= 0.5;
+
+    limitSpeed(a, a.speed * (dSqP < pRadSq ? 2.2 : 1));
+    a.x += a.vx;
+    a.y += a.vy;
+    a.x = wrap(a.x, W);
+    a.y = wrap(a.y, H);
+  }
+}
+
+function updatePredator() {
+  const n = P.herdSize;
+  const active = herd.slice(0, n);
+  const ps = P.predSpeed;
+
+  let nearest = null, nd = Infinity;
+  for (let i = 0; i < n; i++) {
+    const d = dist(predator, active[i]);
+    if (d < nd) { nd = d; nearest = active[i]; }
+  }
+
+  if (predator.cooldown > 0) {
+    predator.cooldown--;
+    predator.vx *= 0.97;
+    predator.vy *= 0.97;
+  } else if (nearest) {
+    const dx = nearest.x - predator.x;
+    const dy = nearest.y - predator.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 0) {
+      predator.vx += (dx / d) * 0.12 * ps;
+      predator.vy += (dy / d) * 0.12 * ps;
+    }
+    if (d < 8) {
+      predator.cooldown = 120;
+    }
+  }
+
+  if (predator.x < 20) predator.vx += 0.3;
+  if (predator.x > W - 20) predator.vx -= 0.3;
+  if (predator.y < 20) predator.vy += 0.3;
+  if (predator.y > H - 20) predator.vy -= 0.3;
+
+  limitSpeed(predator, 2.5 * ps);
+  predator.x += predator.vx;
+  predator.y += predator.vy;
+  predator.x = wrap(predator.x, W);
+  predator.y = wrap(predator.y, H);
+}
+
+function drawArrow(x, y, vx, vy, size, color) {
+  const angle = Math.atan2(vy, vx);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size * 0.6, -size * 0.5);
+  ctx.lineTo(-size * 0.3, 0);
+  ctx.lineTo(-size * 0.6, size * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+const herdColor = '#0F6E56';
+const predColor = '#A32D2D';
+const panicColor = 'rgba(163,45,45,0.06)';
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const n = P.herdSize;
+  const pRad = P.panicRadius;
+
+  ctx.beginPath();
+  ctx.arc(predator.x, predator.y, pRad, 0, Math.PI * 2);
+  ctx.fillStyle = panicColor;
+  ctx.fill();
+
+  for (let i = 0; i < n; i++) {
+    const a = herd[i];
+    drawArrow(a.x, a.y, a.vx, a.vy, 5, herdColor);
+  }
+
+  drawArrow(predator.x, predator.y, predator.vx, predator.vy, 10, predColor);
+  if (predator.cooldown > 0) {
+    ctx.beginPath();
+    ctx.arc(predator.x, predator.y, 12, 0, Math.PI * 2);
+    ctx.strokeStyle = predColor;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = predator.cooldown / 120;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  let avgDist = 0, pairs = 0;
+  for (let i = 0; i < Math.min(n, 30); i++) {
+    for (let j = i + 1; j < Math.min(n, 30); j++) {
+      avgDist += dist(herd[i], herd[j]);
+      pairs++;
+    }
+  }
+  avgDist = pairs > 0 ? Math.round(avgDist / pairs) : 0;
+  document.getElementById('stats').textContent =
+    'avg spacing: ' + avgDist + 'px | predator ' + (predator.cooldown > 0 ? 'resting' : 'hunting');
+}
+
+function loop() {
+  if (!paused) {
+    updateHerd();
+    updatePredator();
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

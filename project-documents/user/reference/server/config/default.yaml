@@ -1,0 +1,38 @@
+# Migratory World Server — Default Configuration
+
+server:
+  host: "0.0.0.0"       # Bind address for the server
+  port: 8765             # WebSocket port
+
+simulation:
+  tick_rate: 20          # Ticks per second (1-120)
+  world_bounds:
+    width: 1000.0        # World width in simulation units
+    height: 1000.0       # World height in simulation units
+  entity_capacity: 10000 # Maximum number of entities
+  environment:
+    seed: 42               # RNG seed for environment generation
+  sim_logging:
+    enabled: true
+    path: "test_output.log"
+    snapshot_interval: 50
+  profiles:
+    - name: "default"
+      max_speed: 5.0
+      query_radius: 50.0
+      cohesion_weight: 0.01
+      separation_weight: 0.1
+      alignment_weight: 0.05
+      separation_radius: 15.0
+  populations:
+    - profile: "default"
+      count: 100
+      spawn_area:
+        x_min: 0.0
+        x_max: 1000.0
+        y_min: 0.0
+        y_max: 1000.0
+
+logging:
+  level: "INFO"          # Log level: DEBUG, INFO, WARNING, ERROR
+  format: "json"         # Output format: "json" or "text"
