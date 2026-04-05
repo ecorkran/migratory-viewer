@@ -1,0 +1,52 @@
+---
+docType: slice-plan
+parent: user/project-guides/001-concept.migratory-viewer.md
+project: migratory-viewer
+dateCreated: 20260405
+dateUpdated: 20260405
+status: draft
+---
+
+# Slice Plan: Viewer Foundation
+
+## Parent Document
+[001-concept.migratory-viewer.md](001-concept.migratory-viewer.md) — Project concept for the migratory real-time visualization client.
+
+## Foundation Work
+
+1. [ ] **(100) Project Scaffold and Rendering Core** — Vite project setup (TypeScript, dev server, build config), Three.js scene initialization (renderer, camera, lighting, resize handling), orthographic camera with pan/zoom controls, and a static test scene rendering N instanced cones at random positions over a flat ground plane. No WebSocket, no simulation data — this slice proves the rendering pipeline works and establishes the project structure. Includes: `package.json`, `tsconfig.json`, Vite config, source directory layout, and a `dev` script that launches the viewer in a browser. The instanced mesh uses the same cone geometry and profile-based coloring approach proven in the `threejs_boid_terrain.html` artifact. Effort: 2/5
+
+## Feature Slices
+
+2. [ ] **(101) WebSocket Consumer and Live Entity Rendering** — Connect to the world server's WebSocket endpoint, receive the initial snapshot (world bounds, entity state arrays), and render entities from server data instead of random positions. Per-tick state updates drive instanced mesh matrix updates in the render loop. Connection lifecycle: connect, receive snapshot, consume ticks, handle disconnect with reconnection and status indicator. The deserialization layer parses the binary wire protocol defined in migratory slice 306: `DataView` for fixed-size headers (type byte, tick number, entity count, world bounds), `Float64Array` views for positions and velocities, `Int32Array` view for profile indices. Little-endian, row-major throughout. The WebSocket endpoint URL is configurable via environment variable or runtime parameter. This is the slice where the viewer becomes a real client. Dependencies: (100) Project Scaffold. External: migratory slices 305, 306 (both complete). Risk: Low. Effort: 3/5
+
+3. [ ] **(102) Terrain and Biome Rendering** — Render terrain elevation as a displaced `PlaneGeometry` with computed vertex normals. The server has real terrain data (migratory 501 complete) that agents respond to — the viewer should render this data, not generate its own. This requires a protocol extension on the migratory side to send the elevation grid to clients (a new message type in the 0x03–0x0F reserved range). The terrain rendering code takes a typed elevation grid as input, builds the displaced plane geometry, and computes vertex normals. Until the protocol extension exists, render a flat ground plane. Biome layer is stubbed (uniform color) until migratory slice 502 is complete and the protocol carries biome data. Entities render above terrain height at their world positions via a terrain height lookup (trivial on a flat plane, meaningful once real terrain arrives). Dependencies: (101) WebSocket Consumer. External: migratory protocol extension for terrain data. Risk: Low. Effort: 2/5
+
+4. [ ] **(103) Environment Overlay Rendering** — Render the remaining environment layers as visual overlays atop terrain: resource points as billboard sprites or small meshes with type-based icons, threat zones as translucent radial gradient meshes (red tint, configurable opacity), and stigmergic trails as a dynamic texture or decal layer updated per tick. Each layer is independently toggleable via a UI control. Dependencies: (102) Terrain and Biome Rendering. External: migratory slices 503, 505, 506 (not started). Risk: Medium — trail rendering performance at scale. Effort: 3/5
+
+5. [ ] **(104) Camera Modes and Navigation** — Extend the camera system beyond the foundation's basic orthographic pan/zoom. Add: perspective mode toggle (smooth animated transition between orthographic top-down and perspective orbit), orbit controls in perspective mode (drag to rotate, scroll to zoom), follow-cam mode that tracks a selected entity or group centroid, minimap in corner showing full world bounds with viewport indicator. Dependencies: (100) Project Scaffold. Risk: Low. Effort: 2/5
+
+6. [ ] **(105) HUD and Status Panel** — Heads-up display with simulation metadata and controls. Connection status (connected/disconnected/reconnecting), tick rate and frame rate counters, entity count by profile type, simulation time (when server slice 308 provides temporal state), profile legend (color key mapping profile names to their rendering color). Overlay panel is minimal DOM positioned over the canvas, styled to match the simulation aesthetic. Toggle visibility with a hotkey. Dependencies: (101) WebSocket Consumer. Risk: Low. Effort: 2/5
+
+## Integration Work
+
+7. [ ] **(106) Performance Profiling and Optimization** — Profile rendering and deserialization performance at target entity counts (10K, 50K, 100K). Identify bottlenecks in the instanced mesh update path, WebSocket deserialization, and garbage collection. Implement optimizations as needed: reuse typed array buffers (avoid allocation per tick), frustum culling on the client side (skip matrix updates for off-screen instances), LOD reduction for distant entities (smaller geometry or point rendering beyond a threshold). Establish a performance budget: maintain 30fps at 50K entities on a mid-range GPU. Dependencies: (101) WebSocket Consumer. Risk: Medium — unknown bottleneck distribution. Effort: 3/5
+
+8. [ ] **(107) Build and Deployment** — Production build configuration (Vite build, tree shaking, asset optimization), static hosting setup (GitHub Pages via GitHub Actions, or Netlify), and a README documenting how to run the viewer locally and connect to a world server. Includes a `--server` CLI flag or environment variable to configure the WebSocket endpoint. Dependencies: All feature slices. Risk: Low. Effort: 1/5
+
+## Notes
+
+- **Slice 101 is the critical path.** Everything after it depends on live data. The foundation slice (100) can be built immediately. The wire protocol (306) is complete — no protocol uncertainty remains.
+- **Slices 102 and 103 depend on a migratory protocol extension.** The wire protocol carries entity state only. Terrain exists server-side (501 complete) and agents respond to it — the viewer should render what the server provides, not generate its own. This requires extending the protocol with an environment data message type. Until then, the viewer renders a flat ground plane. The rendering code should accept terrain data from any source so swapping in server data is trivial.
+- **Slice 104 (camera) and 105 (HUD) are independent of each other** and of the environment rendering slices. They can be developed in parallel with 102/103 once 101 is complete.
+- **No client-to-server commands in this plan.** The world server's v1 protocol is server-push only. Interactive controls (spawning entities, adjusting parameters) are future work gated on the server's "Administrative Client Commands" future slice.
+- **TypeScript confirmed.** The binary protocol parsing — computing byte offsets into `ArrayBuffer`, wrapping sections as `Float64Array` and `Int32Array` views, managing little-endian header fields via `DataView` — is exactly where type safety prevents silent data corruption. Vite's TS support is zero-config.
+
+## Future Work
+
+1. [ ] **Replay Mode** — Load a simulation log file (migratory slice 307, complete) and replay it in the viewer with playback controls (play, pause, step, speed, scrub). The viewer becomes a debugging and analysis tool in addition to a live client. The log format uses the same binary serialization as the wire protocol. Dependencies: viewer slice 101 (deserialization). Effort: 3/5
+2. [ ] **Interactive Controls** — Client-to-server commands: spawn/remove entities, adjust simulation parameters, pause/resume, change time scale. Requires migratory's "Administrative Client Commands" future work. Dependencies: Server-side command protocol. Effort: 3/5
+3. [ ] **Day/Night and Seasonal Rendering** — Modulate lighting, fog color, and terrain/biome colors based on the server's temporal state (day/night cycle, seasonal parameter). Snow on terrain in winter, warm golden light at sunset, darker ambient at night. Dependencies: migratory slice 308. Effort: 2/5
+4. [ ] **Multi-Resolution Entity Rendering** — Render aggregate entities (from migratory's future multi-resolution simulation) as cluster indicators rather than individual agents. A translucent sphere or icon showing count, heading, and dispersion for distant groups. Dependencies: migratory multi-resolution entity simulation. Effort: 3/5
+5. [ ] **Recording and Export** — Capture the viewer's rendered output as video (via MediaRecorder API on the canvas) or export a snapshot as a high-resolution image. Useful for content creation and portfolio material. Effort: 2/5
+6. [ ] **Server-Provided Terrain Rendering** — Consume real terrain data from the server once the wire protocol is extended with an environment data message type (0x03 or similar). The terrain layer (501) already exists server-side — this requires a migratory-side protocol extension to serialize the elevation grid in the snapshot, and viewer-side deserialization to build `PlaneGeometry` from that data. Replaces the flat ground plane from slice 102. Biome data (502, not started) would follow the same pattern. Dependencies: migratory protocol extension. Effort: 2/5
