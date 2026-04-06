@@ -6,8 +6,8 @@ parent: user/architecture/100-slices.viewer-foundation.md
 dependencies: []
 interfaces: [101-websocket-consumer-and-live-entity-rendering, 104-camera-modes-and-navigation]
 dateCreated: 20260405
-dateUpdated: 20260405
-status: not_started
+dateUpdated: 20260406
+status: complete
 ---
 
 # Slice Design: Project Scaffold and Rendering Core
@@ -224,17 +224,17 @@ Nothing — this is the foundation.
    pnpm install
    pnpm dev
    ```
-   Browser opens to `http://localhost:5173`. The viewport shows a dark background with a green-tinted ground plane.
+   Browser opens to `http://localhost:5173`. The viewport shows a dark background with a green-tinted ground plane and scattered colored cones.
 
 2. **Renderer backend:**
-   Open browser console. A log message indicates which backend is active: `WebGPU` or `WebGL 2 (fallback)`. In Chrome/Edge the expectation is WebGPU.
+   Open browser console. Log message: `[migratory-viewer] Renderer backend: WebGPU` (or `WebGL 2 (fallback)` on unsupported browsers). In Chrome/Edge the expectation is WebGPU.
 
 3. **Entity rendering:**
-   Approximately 500 small colored cones are visible scattered across the ground plane. At least 2-3 distinct colors are present, corresponding to different simulated profile indices. Each cone points in a direction (not all identical).
+   Approximately 500 small colored cones are visible scattered across the ground plane. 5 distinct colors cycle (teal, salmon, blue, gold, purple), corresponding to profile indices. Each cone points in a varied direction.
 
 4. **Camera controls:**
    - Scroll the mouse wheel: the view zooms in and out smoothly. Zooming in makes cones larger; zooming out shows more of the world.
-   - Hold middle-click (or right-click) and drag: the view pans across the ground plane.
+   - Hold right-click and drag: the view pans across the ground plane. Context menu is suppressed on the canvas.
 
 5. **Resize:**
    Resize the browser window. The ground plane and cones maintain correct proportions — no stretching or clipping.
@@ -249,7 +249,12 @@ Nothing — this is the foundation.
    ```bash
    pnpm build
    ```
-   Produces `dist/` with `index.html` and bundled JS. Serving via `pnpm preview` shows the same scene.
+   Produces `dist/` with `index.html` and bundled JS (~723KB gzipped to ~198KB — Three.js is the bulk). `pnpm preview` serves the production build identically.
+
+**Caveats discovered during implementation:**
+- `@types/three` is needed as a devDependency — types are *not* fully bundled with `three` for the `three/webgpu` subpath in r183.
+- `renderer.backend.isWebGPUBackend` is not typed on the base `Backend` class; use `'isWebGPUBackend' in renderer.backend` runtime check to avoid type errors.
+- Vite 8 warns about chunk size >500KB due to Three.js bundle size — this is informational, not an error.
 
 ## Implementation Notes
 
