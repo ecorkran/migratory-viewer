@@ -9,6 +9,9 @@ export interface ViewerConfig {
   /** Number of test entities to render (test mode only). */
   defaultEntityCount: number;
 
+  /** Hard cap on entity count accepted from the wire protocol. Parser rejects messages above this. */
+  maxEntityCount: number;
+
   /** Cone geometry parameters. */
   coneRadius: number;
   coneHeight: number;
@@ -43,6 +46,7 @@ const config: ViewerConfig = {
   worldHeight: 1000,
 
   defaultEntityCount: 500,
+  maxEntityCount: 200_000,
 
   coneRadius: 0.3,
   coneHeight: 1.2,
