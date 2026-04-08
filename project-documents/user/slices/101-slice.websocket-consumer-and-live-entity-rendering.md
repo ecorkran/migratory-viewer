@@ -7,7 +7,7 @@ dependencies: [100-project-scaffold-and-rendering-core]
 interfaces: [102-terrain-and-biome-rendering, 103-environment-overlay-rendering, 105-hud-and-status-panel]
 dateCreated: 20260406
 dateUpdated: 20260406
-status: not_started
+status: in-progress
 ---
 
 # Slice Design: WebSocket Consumer and Live Entity Rendering

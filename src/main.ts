@@ -3,7 +3,9 @@ import * as THREE from 'three/webgpu';
 import { createScene } from './rendering/scene.ts';
 import { createCamera, updateCamera, handleResize as handleCameraResize } from './rendering/camera.ts';
 import { createTerrain } from './rendering/terrain.ts';
-import { createEntities } from './rendering/entities.ts';
+import { createEntities, updateEntities } from './rendering/entities.ts';
+import { viewerState } from './state.ts';
+import { createConnection } from './net/connection.ts';
 import config from './config.ts';
 
 const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
@@ -11,12 +13,16 @@ const { renderer, scene } = createScene(canvas);
 
 const camera = createCamera(config.worldWidth, config.worldHeight);
 createTerrain(scene, config.worldWidth, config.worldHeight);
-createEntities(scene);
+const entityMesh = createEntities(scene);
 
 // Camera resize handler
 window.addEventListener('resize', () => {
   handleCameraResize(camera);
 });
+
+// Live data: connect to migratory server and consume snapshots / state updates.
+const connection = createConnection(viewerState);
+connection.connect(config.serverUrl);
 
 // Render loop — setAnimationLoop defers first frame until GPU init is complete
 const timer = new THREE.Timer();
@@ -24,5 +30,6 @@ const timer = new THREE.Timer();
 renderer.setAnimationLoop(() => {
   timer.update();
   updateCamera();
+  updateEntities(entityMesh, viewerState);
   renderer.render(scene, camera);
 });
