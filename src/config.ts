@@ -12,9 +12,10 @@ export interface ViewerConfig {
   /** Hard cap on entity count accepted from the wire protocol. Parser rejects messages above this. */
   maxEntityCount: number;
 
-  /** Cone geometry parameters. */
-  coneRadius: number;
-  coneHeight: number;
+  /** Cone geometry parameters. Radius/height are expressed as a fraction of world width
+   * so cones remain visible at any world scale. Recomputed whenever world bounds change. */
+  coneRadiusRatio: number;
+  coneHeightRatio: number;
   coneSegments: number;
 
   /** Hex color palette indexed by profile. */
@@ -48,8 +49,8 @@ const config: ViewerConfig = {
   defaultEntityCount: 500,
   maxEntityCount: 200_000,
 
-  coneRadius: 0.3,
-  coneHeight: 1.2,
+  coneRadiusRatio: 0.003,
+  coneHeightRatio: 0.012,
   coneSegments: 5,
 
   profileColors: [0x5dcaa5, 0xf09595, 0x7ab8f5, 0xe8c36a, 0xc490e4],
