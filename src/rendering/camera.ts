@@ -5,9 +5,15 @@ let currentZoom = 1;
 let isPanning = false;
 let panStart = new THREE.Vector2();
 let cameraRef: THREE.OrthographicCamera | null = null;
+// Live world bounds, updated by `resizeCameraToWorld`. The camera frustum and
+// zoom math read from these rather than `config.*`, so the viewer adapts to
+// whatever world size the server announces in its snapshot.
+let activeWorldHeight = 0;
 
 /** Create an orthographic camera sized to show the full world bounds. */
 export function createCamera(worldWidth: number, worldHeight: number): THREE.OrthographicCamera {
+  activeWorldHeight = worldHeight;
+
   const aspect = window.innerWidth / window.innerHeight;
   const frustumHeight = worldHeight;
   const frustumWidth = frustumHeight * aspect;
@@ -15,16 +21,18 @@ export function createCamera(worldWidth: number, worldHeight: number): THREE.Ort
   const cx = worldWidth / 2;
   const cz = worldHeight / 2;
 
+  // Far plane scales with world size so very large worlds don't get clipped.
+  const camY = Math.max(worldWidth, worldHeight);
   const camera = new THREE.OrthographicCamera(
     -frustumWidth / 2,
     frustumWidth / 2,
     frustumHeight / 2,
     -frustumHeight / 2,
     0.1,
-    2000,
+    camY * 4,
   );
 
-  camera.position.set(cx, 1000, cz);
+  camera.position.set(cx, camY, cz);
   camera.lookAt(cx, 0, cz);
 
   cameraRef = camera;
@@ -50,13 +58,43 @@ export function updateCamera(): void {
 /** Update camera frustum on window resize. */
 export function handleResize(camera: THREE.OrthographicCamera): void {
   const aspect = window.innerWidth / window.innerHeight;
-  const frustumHeight = config.worldHeight / currentZoom;
+  const frustumHeight = activeWorldHeight / currentZoom;
   const frustumWidth = frustumHeight * aspect;
 
   camera.left = -frustumWidth / 2;
   camera.right = frustumWidth / 2;
   camera.top = frustumHeight / 2;
   camera.bottom = -frustumHeight / 2;
+  camera.updateProjectionMatrix();
+}
+
+/**
+ * Recenter and resize the camera to new world bounds. Called when a snapshot
+ * arrives whose world dimensions differ from the previous ones. Resets zoom so
+ * the new world fills the view.
+ */
+export function resizeCameraToWorld(
+  camera: THREE.OrthographicCamera,
+  worldWidth: number,
+  worldHeight: number,
+): void {
+  activeWorldHeight = worldHeight;
+  currentZoom = 1;
+
+  const aspect = window.innerWidth / window.innerHeight;
+  const frustumHeight = worldHeight;
+  const frustumWidth = frustumHeight * aspect;
+
+  camera.left = -frustumWidth / 2;
+  camera.right = frustumWidth / 2;
+  camera.top = frustumHeight / 2;
+  camera.bottom = -frustumHeight / 2;
+
+  const camY = Math.max(worldWidth, worldHeight);
+  camera.near = 0.1;
+  camera.far = camY * 4;
+  camera.position.set(worldWidth / 2, camY, worldHeight / 2);
+  camera.lookAt(worldWidth / 2, 0, worldHeight / 2);
   camera.updateProjectionMatrix();
 }
 
@@ -68,7 +106,7 @@ function onWheel(event: WheelEvent): void {
   currentZoom = Math.max(config.zoomMin, Math.min(config.zoomMax, currentZoom * zoomFactor));
 
   const aspect = window.innerWidth / window.innerHeight;
-  const frustumHeight = config.worldHeight / currentZoom;
+  const frustumHeight = activeWorldHeight / currentZoom;
   const frustumWidth = frustumHeight * aspect;
 
   cameraRef.left = -frustumWidth / 2;
