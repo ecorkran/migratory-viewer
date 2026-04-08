@@ -8,7 +8,7 @@ initiative: 100
 initiativeName: viewer-foundation
 source: user/project-guides/001-initiative-plan.migratory-viewer.md
 dateCreated: 20260405
-dateUpdated: 20260405
+dateUpdated: 20260408
 status: in_progress
 archIndex: 100
 component: viewer-foundation
@@ -131,6 +131,8 @@ src/
 ├── ui/
 │   ├── hud.ts              # Status panel: connection, tick rate, entity counts
 │   └── legend.ts           # Profile color legend
+├── input/
+│   └── camera-input.ts     # DOM event → camera action layer (pan/zoom bindings)
 └── config.ts               # Runtime configuration (server URL, rendering params)
 ```
 

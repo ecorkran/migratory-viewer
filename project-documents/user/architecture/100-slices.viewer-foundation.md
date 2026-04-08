@@ -3,7 +3,7 @@ docType: slice-plan
 parent: user/project-guides/001-concept.migratory-viewer.md
 project: migratory-viewer
 dateCreated: 20260405
-dateUpdated: 20260408
+dateUpdated: 20260409
 status: in-progress
 ---
 
@@ -28,9 +28,11 @@ status: in-progress
 
 6. [ ] **(105) HUD and Status Panel** — Heads-up display with simulation metadata and controls. Connection status (connected/disconnected/reconnecting), tick rate and frame rate counters, entity count by profile type, simulation time (when server slice 308 provides temporal state), profile legend (color key mapping profile names to their rendering color). Overlay panel is minimal DOM positioned over the canvas, styled to match the simulation aesthetic. Toggle visibility with a hotkey. Dependencies: (101) WebSocket Consumer. Risk: Low. Effort: 2/5
 
+7. [ ] **(108) Camera Constraints and Pan** — Constrain the orthographic camera so the viewer maintains a consistent, world-grounded viewpoint, and add click-drag panning. Zoom-out is clamped to the level where the camera frustum exactly frames the world bounds (max zoom-out = world-fit); because only one center position is valid at that zoom level, fully zooming out naturally resets any pan with no special-case code. Left-click + drag pans the camera by translating its center in the XZ plane, with drag distance scaled so one screen pixel maps to one world unit at the current zoom. Pan is clamped so the camera frustum edges cannot cross world bounds. A single `allowOutOfBoundsView` config flag (default `false`) disables both the zoom and pan clamps as a debug escape hatch. Input is routed through a thin action-abstraction layer (e.g. `panStart` / `panMove` / `panEnd`) rather than wiring mouse events directly into camera logic, so rebinding to other inputs (middle-click, modifier keys, gamepad, macOS three-finger drag — which the OS delivers as normal mouse events) is a config/wiring change later rather than a rewrite. Snap pan only; no inertia or smoothing in this slice. Existing zoom-to-center wheel behavior is preserved. Camera parameters (clamp flag, pan speed) live in `config.ts` alongside existing camera/rendering settings. Note: this slice is a prerequisite subset of the future (104) Camera Modes and Navigation slice — record that relationship when 104 is picked up. Dependencies: (100) Project Scaffold. Risk: Low. Effort: 2/5
+
 ## Integration Work
 
-7. [ ] **(106) Performance Profiling and Optimization** — Profile rendering and deserialization performance at target entity counts (10K, 50K, 100K). Identify bottlenecks in the instanced mesh update path, WebSocket deserialization, and garbage collection. Implement optimizations as needed: reuse typed array buffers (avoid allocation per tick), frustum culling on the client side (skip matrix updates for off-screen instances), LOD reduction for distant entities (smaller geometry or point rendering beyond a threshold). Establish a performance budget: maintain 30fps at 50K entities on a mid-range GPU. Dependencies: (101) WebSocket Consumer. Risk: Medium — unknown bottleneck distribution. Effort: 3/5
+8. [ ] **(106) Performance Profiling and Optimization** — Profile rendering and deserialization performance at target entity counts (10K, 50K, 100K). Identify bottlenecks in the instanced mesh update path, WebSocket deserialization, and garbage collection. Implement optimizations as needed: reuse typed array buffers (avoid allocation per tick), frustum culling on the client side (skip matrix updates for off-screen instances), LOD reduction for distant entities (smaller geometry or point rendering beyond a threshold). Establish a performance budget: maintain 30fps at 50K entities on a mid-range GPU. Dependencies: (101) WebSocket Consumer. Risk: Medium — unknown bottleneck distribution. Effort: 3/5
 
 8. [ ] **(107) Build and Deployment** — Production build configuration (Vite build, tree shaking, asset optimization), static hosting setup (GitHub Pages via GitHub Actions, or Netlify), and a README documenting how to run the viewer locally and connect to a world server. Includes a `--server` CLI flag or environment variable to configure the WebSocket endpoint. Dependencies: All feature slices. Risk: Low. Effort: 1/5
 
