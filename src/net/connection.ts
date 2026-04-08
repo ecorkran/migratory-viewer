@@ -69,6 +69,16 @@ export function createConnection(viewerState: ViewerState): Connection {
       ws?.close();
       return;
     }
+    // Debug: per-tick parsed-payload log. Uncomment to verify the server is
+    // delivering changing positions/velocities for STATE_UPDATE frames.
+    // if ((parsed.tick % 60) === 0) {
+    //   console.log(
+    //     '[debug:net] update tick', parsed.tick,
+    //     'count', parsed.entityCount,
+    //     'pos[0..3]', parsed.positions[0], parsed.positions[1], parsed.positions[2], parsed.positions[3],
+    //     'vel[0..3]', parsed.velocities[0], parsed.velocities[1], parsed.velocities[2], parsed.velocities[3],
+    //   );
+    // }
     applyStateUpdate(viewerState, parsed);
   }
 
