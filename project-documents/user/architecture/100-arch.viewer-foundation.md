@@ -10,6 +10,8 @@ source: user/project-guides/001-initiative-plan.migratory-viewer.md
 dateCreated: 20260405
 dateUpdated: 20260405
 status: in_progress
+archIndex: 100
+component: viewer-foundation
 ---
 
 # Architecture: Viewer Foundation

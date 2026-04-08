@@ -1,5 +1,6 @@
 ---
 layer: project
+project: migratory-viewer
 phase: 0
 phaseName: concept
 guideRole: primary
@@ -9,6 +10,7 @@ dependsOn: []
 dateCreated: 20260405
 dateUpdated: 20260405
 status: in_progress
+docType: concept
 ---
 
 # migratory-viewer
