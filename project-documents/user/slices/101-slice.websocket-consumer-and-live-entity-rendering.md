@@ -6,8 +6,8 @@ parent: user/architecture/100-slices.viewer-foundation.md
 dependencies: [100-project-scaffold-and-rendering-core]
 interfaces: [102-terrain-and-biome-rendering, 103-environment-overlay-rendering, 105-hud-and-status-panel]
 dateCreated: 20260406
-dateUpdated: 20260406
-status: in-progress
+dateUpdated: 20260408
+status: complete
 ---
 
 # Slice Design: WebSocket Consumer and Live Entity Rendering

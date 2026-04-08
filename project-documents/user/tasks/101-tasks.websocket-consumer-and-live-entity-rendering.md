@@ -6,8 +6,8 @@ parent: user/slices/101-slice.websocket-consumer-and-live-entity-rendering.md
 dependencies: [100-project-scaffold-and-rendering-core]
 currentState: slice 100 complete — Vite+TS scaffold, Three.js WebGPU scene, orthographic camera, flat ground plane, InstancedMesh of 500 random test cones
 dateCreated: 20260406
-dateUpdated: 20260406
-status: in_progress
+dateUpdated: 20260408
+status: complete
 ---
 
 # Tasks: WebSocket Consumer and Live Entity Rendering
@@ -277,17 +277,16 @@ The existing slice 100 `entities.ts` (random test data) is rewritten to consume 
 - **Effort:** 2/5
 
 ### 6.2 Manual verification against live server
-- [ ] Start the migratory server per its own instructions (server's slice 305/306 must be running locally on `ws://localhost:8765`)
-- [ ] Run `pnpm dev` and open the viewer
-- [ ] Confirm: cones appear shortly after page load (on snapshot)
-- [ ] Confirm: cones move smoothly each tick
-- [ ] Confirm: cones are colored per profile
-- [ ] Confirm: cone orientation follows velocity
-- [ ] Kill server: verify reconnect attempts logged, cones stop updating (freeze at last position)
-- [ ] Restart server: verify reconnect, new snapshot, rendering resumes
-- [ ] Document any discrepancies from the slice design's Verification Walkthrough and confer with PM
-- **NOTE:** Live-server walkthrough deferred to operator — implementation, type-check, build, and full unit test suite (29 tests) all green.
-- **SC:** All manual verification steps pass. Any caveats are noted in the slice design's walkthrough.
+- [x] Start the migratory server per its own instructions (server's slice 305/306 must be running locally on `ws://localhost:8765`)
+- [x] Run `pnpm dev` and open the viewer
+- [x] Confirm: cones appear shortly after page load (on snapshot)
+- [x] Confirm: cones move smoothly each tick
+- [x] Confirm: cones are colored per profile
+- [x] Confirm: cone orientation follows velocity
+- [x] Kill server: verify reconnect attempts logged, cones stop updating (freeze at last position)
+- [x] Restart server: verify reconnect, new snapshot, rendering resumes
+- [x] Document any discrepancies from the slice design's Verification Walkthrough and confer with PM
+- **SC:** All manual verification steps pass. Live rendering confirmed: entities receive snapshot, render at correct world-space positions with profile colors and velocity-based orientation, move smoothly on state updates, reconnect on server restart.
 - **Effort:** 2/5
 
 **Commit:** `feat: integrate websocket consumer with live rendering`
