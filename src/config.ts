@@ -38,6 +38,9 @@ export interface ViewerConfig {
   /** Camera zoom limits. */
   zoomMin: number;
   zoomMax: number;
+
+  // debug: disable camera zoom/pan clamps (pan outside world, zoom past world-fit)
+  allowOutOfBoundsView: boolean;
 }
 
 const config: ViewerConfig = {
@@ -67,6 +70,9 @@ const config: ViewerConfig = {
 
   zoomMin: 0.1,
   zoomMax: 10,
+
+  // debug: disable camera zoom/pan clamps (pan outside world, zoom past world-fit)
+  allowOutOfBoundsView: false,
 };
 
 export default config;
