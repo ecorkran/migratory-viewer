@@ -2,17 +2,58 @@ import * as THREE from 'three/webgpu';
 import config from '../config.ts';
 
 let currentZoom = 1;
-let isPanning = false;
-let panStart = new THREE.Vector2();
+let panOrigin: { x: number; y: number } | null = null;
 let cameraRef: THREE.OrthographicCamera | null = null;
 // Live world bounds, updated by `resizeCameraToWorld`. The camera frustum and
 // zoom math read from these rather than `config.*`, so the viewer adapts to
 // whatever world size the server announces in its snapshot.
 let activeWorldHeight = 0;
+let activeWorldWidth = 0;
+
+/**
+ * Compute the minimum zoom at which the frustum fits within the world on both axes.
+ * Derived from:
+ *   frustumHeight = activeWorldHeight / currentZoom
+ *   frustumWidth  = frustumHeight * aspect
+ *   need: frustumHeight <= activeWorldHeight  =>  currentZoom >= 1
+ *   need: frustumWidth  <= activeWorldWidth   =>  currentZoom >= (activeWorldHeight * aspect) / activeWorldWidth
+ *   zoomFit = max(1, (activeWorldHeight * aspect) / activeWorldWidth)
+ */
+function computeZoomFit(): number {
+  if (activeWorldWidth === 0 || activeWorldHeight === 0) return 1;
+  const aspect = window.innerWidth / window.innerHeight;
+  return Math.max(1, (activeWorldHeight * aspect) / activeWorldWidth);
+}
+
+/**
+ * Clamp camera position so the frustum never shows area outside world bounds.
+ * No-op when `config.allowOutOfBoundsView` is true.
+ */
+function clampCameraToWorld(camera: THREE.OrthographicCamera): void {
+  if (config.allowOutOfBoundsView) return;
+
+  const fw = camera.right - camera.left;   // frustum width in world units
+  const fh = camera.top - camera.bottom;   // frustum height in world units
+
+  if (fw >= activeWorldWidth) {
+    camera.position.x = activeWorldWidth / 2;
+  } else {
+    camera.position.x = Math.max(fw / 2, Math.min(activeWorldWidth - fw / 2, camera.position.x));
+  }
+
+  if (fh >= activeWorldHeight) {
+    camera.position.z = activeWorldHeight / 2;
+  } else {
+    camera.position.z = Math.max(fh / 2, Math.min(activeWorldHeight - fh / 2, camera.position.z));
+  }
+
+  camera.lookAt(camera.position.x, 0, camera.position.z);
+}
 
 /** Create an orthographic camera sized to show the full world bounds. */
 export function createCamera(worldWidth: number, worldHeight: number): THREE.OrthographicCamera {
   activeWorldHeight = worldHeight;
+  activeWorldWidth = worldWidth;
 
   const aspect = window.innerWidth / window.innerHeight;
   const frustumHeight = worldHeight;
@@ -58,6 +99,13 @@ export function updateCamera(): void {
 /** Update camera frustum on window resize. */
 export function handleResize(camera: THREE.OrthographicCamera): void {
   const aspect = window.innerWidth / window.innerHeight;
+
+  // Snap zoom up to world-fit if the resize makes world-fit higher than current zoom.
+  if (!config.allowOutOfBoundsView) {
+    const fit = computeZoomFit();
+    if (currentZoom < fit) currentZoom = fit;
+  }
+
   const frustumHeight = activeWorldHeight / currentZoom;
   const frustumWidth = frustumHeight * aspect;
 
@@ -66,6 +114,7 @@ export function handleResize(camera: THREE.OrthographicCamera): void {
   camera.top = frustumHeight / 2;
   camera.bottom = -frustumHeight / 2;
   camera.updateProjectionMatrix();
+  clampCameraToWorld(camera);
 }
 
 /**
@@ -79,6 +128,7 @@ export function resizeCameraToWorld(
   worldHeight: number,
 ): void {
   activeWorldHeight = worldHeight;
+  activeWorldWidth = worldWidth;
   currentZoom = 1;
 
   const aspect = window.innerWidth / window.innerHeight;
@@ -96,40 +146,22 @@ export function resizeCameraToWorld(
   camera.position.set(worldWidth / 2, camY, worldHeight / 2);
   camera.lookAt(worldWidth / 2, 0, worldHeight / 2);
   camera.updateProjectionMatrix();
+  clampCameraToWorld(camera);
 }
 
-function onWheel(event: WheelEvent): void {
-  event.preventDefault();
-  if (!cameraRef) return;
+// --- Action API (called by camera-input.ts) ---
 
-  const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
-  currentZoom = Math.max(config.zoomMin, Math.min(config.zoomMax, currentZoom * zoomFactor));
-
-  const aspect = window.innerWidth / window.innerHeight;
-  const frustumHeight = activeWorldHeight / currentZoom;
-  const frustumWidth = frustumHeight * aspect;
-
-  cameraRef.left = -frustumWidth / 2;
-  cameraRef.right = frustumWidth / 2;
-  cameraRef.top = frustumHeight / 2;
-  cameraRef.bottom = -frustumHeight / 2;
-  cameraRef.updateProjectionMatrix();
+/** Begin a pan gesture at the given screen coordinates. */
+export function panStart(screenX: number, screenY: number): void {
+  panOrigin = { x: screenX, y: screenY };
 }
 
-function onMouseDown(event: MouseEvent): void {
-  // Middle-click (button 1) or right-click (button 2) for panning
-  if (event.button === 1 || event.button === 2) {
-    isPanning = true;
-    panStart.set(event.clientX, event.clientY);
-    event.preventDefault();
-  }
-}
+/** Continue a pan gesture to the given screen coordinates. */
+export function panMove(screenX: number, screenY: number): void {
+  if (panOrigin === null || cameraRef === null) return;
 
-function onMouseMove(event: MouseEvent): void {
-  if (!isPanning || !cameraRef) return;
-
-  const dx = event.clientX - panStart.x;
-  const dy = event.clientY - panStart.y;
+  const dx = screenX - panOrigin.x;
+  const dy = screenY - panOrigin.y;
 
   // Convert screen pixels to world units
   const frustumWidth = cameraRef.right - cameraRef.left;
@@ -141,11 +173,65 @@ function onMouseMove(event: MouseEvent): void {
   cameraRef.position.x -= dx * worldPerPixelX;
   cameraRef.position.z -= dy * worldPerPixelY;
 
-  panStart.set(event.clientX, event.clientY);
+  panOrigin = { x: screenX, y: screenY };
+  clampCameraToWorld(cameraRef);
+}
+
+/** End a pan gesture. */
+export function panEnd(): void {
+  panOrigin = null;
+}
+
+/**
+ * Zoom by a multiplicative factor (> 1 zooms in, < 1 zooms out).
+ * Zoom-fit lower bound is enforced unless `config.allowOutOfBoundsView` is true.
+ */
+export function zoomBy(factor: number): void {
+  if (cameraRef === null) return;
+
+  currentZoom = currentZoom * factor;
+
+  // Upper bound always applied
+  currentZoom = Math.min(config.zoomMax, currentZoom);
+
+  // Lower bound: zoom-fit (gated by allowOutOfBoundsView flag)
+  if (!config.allowOutOfBoundsView) {
+    currentZoom = Math.max(computeZoomFit(), currentZoom);
+  }
+
+  const aspect = window.innerWidth / window.innerHeight;
+  const frustumHeight = activeWorldHeight / currentZoom;
+  const frustumWidth = frustumHeight * aspect;
+
+  cameraRef.left = -frustumWidth / 2;
+  cameraRef.right = frustumWidth / 2;
+  cameraRef.top = frustumHeight / 2;
+  cameraRef.bottom = -frustumHeight / 2;
+  cameraRef.updateProjectionMatrix();
+  clampCameraToWorld(cameraRef);
+}
+
+// --- Legacy DOM handlers (removed in task 4 after camera-input.ts is wired in) ---
+
+function onWheel(event: WheelEvent): void {
+  event.preventDefault();
+  zoomBy(event.deltaY > 0 ? 0.9 : 1.1);
+}
+
+function onMouseDown(event: MouseEvent): void {
+  // Middle-click (button 1) or right-click (button 2) for panning
+  if (event.button === 1 || event.button === 2) {
+    panStart(event.clientX, event.clientY);
+    event.preventDefault();
+  }
+}
+
+function onMouseMove(event: MouseEvent): void {
+  panMove(event.clientX, event.clientY);
 }
 
 function onMouseUp(event: MouseEvent): void {
   if (event.button === 1 || event.button === 2) {
-    isPanning = false;
+    panEnd();
   }
 }
