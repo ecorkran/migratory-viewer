@@ -6,12 +6,14 @@ import { createTerrain, resizeTerrain } from './rendering/terrain.ts';
 import { createEntities, updateEntities, rebuildEntityGeometry } from './rendering/entities.ts';
 import { viewerState } from './state.ts';
 import { createConnection } from './net/connection.ts';
+import { initCameraInput } from './input/camera-input.ts';
 import config from './config.ts';
 
 const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
 const { renderer, scene } = createScene(canvas);
 
 const camera = createCamera(config.worldWidth, config.worldHeight);
+initCameraInput(canvas);
 const terrainMesh = createTerrain(scene, config.worldWidth, config.worldHeight);
 const entityMesh = createEntities(scene);
 

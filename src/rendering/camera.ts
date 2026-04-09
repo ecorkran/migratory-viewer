@@ -78,16 +78,6 @@ export function createCamera(worldWidth: number, worldHeight: number): THREE.Ort
 
   cameraRef = camera;
 
-  // Register input handlers on the canvas
-  const canvas = document.getElementById('three-canvas');
-  if (canvas) {
-    canvas.addEventListener('wheel', onWheel, { passive: false });
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }
-
   return camera;
 }
 
@@ -211,27 +201,3 @@ export function zoomBy(factor: number): void {
   clampCameraToWorld(cameraRef);
 }
 
-// --- Legacy DOM handlers (removed in task 4 after camera-input.ts is wired in) ---
-
-function onWheel(event: WheelEvent): void {
-  event.preventDefault();
-  zoomBy(event.deltaY > 0 ? 0.9 : 1.1);
-}
-
-function onMouseDown(event: MouseEvent): void {
-  // Middle-click (button 1) or right-click (button 2) for panning
-  if (event.button === 1 || event.button === 2) {
-    panStart(event.clientX, event.clientY);
-    event.preventDefault();
-  }
-}
-
-function onMouseMove(event: MouseEvent): void {
-  panMove(event.clientX, event.clientY);
-}
-
-function onMouseUp(event: MouseEvent): void {
-  if (event.button === 1 || event.button === 2) {
-    panEnd();
-  }
-}
