@@ -199,7 +199,7 @@ Prereqs: world server running, viewer connected, at least one snapshot received 
 
 ### Caveats
 
-- **Browser cache on refresh.** During development, a hard page refresh (without cache-busting query param) occasionally shows a blank canvas with no entities. Appending a cache-bust (e.g. `?v=2`) or restarting the dev server resolves it. This appears to be a Vite HMR / browser caching artifact, not a camera-related regression — the same behavior occurs on `main`.
+- **WebGPU buffer-in-use on refresh (pre-existing).** Page refresh intermittently causes `"Buffer (unlabeled) used in submit while destroyed"` WebGPU errors, resulting in a blank canvas. Root cause: GPU buffers from the previous page load are garbage collected while the new page's renderer is still submitting commands. Geometry disposal was deferred to `requestAnimationFrame` to reduce frequency, but the issue persists at the browser/Three.js WebGPU backend level. Tracked for separate investigation — not caused by slice 108 changes. WebGL 2 fallback (`forceWebGL: true` on `WebGPURenderer`) was attempted but renders blank; needs separate debugging.
 
 ## Risks
 
