@@ -11,18 +11,16 @@ let activeWorldHeight = 0;
 let activeWorldWidth = 0;
 
 /**
- * Compute the minimum zoom at which the frustum fits within the world on both axes.
- * Derived from:
- *   frustumHeight = activeWorldHeight / currentZoom
- *   frustumWidth  = frustumHeight * aspect
- *   need: frustumHeight <= activeWorldHeight  =>  currentZoom >= 1
- *   need: frustumWidth  <= activeWorldWidth   =>  currentZoom >= (activeWorldHeight * aspect) / activeWorldWidth
- *   zoomFit = max(1, (activeWorldHeight * aspect) / activeWorldWidth)
+ * Compute the minimum zoom level (max zoom-out).
+ *
+ * The frustum is height-based: frustumHeight = activeWorldHeight / currentZoom.
+ * At zoom=1 the full world height is always visible. On a wide window the
+ * frustum may extend beyond the world horizontally — that's acceptable (black
+ * bars / background on the sides). clampCameraToWorld centers the camera when
+ * the frustum exceeds the world on either axis, so the world stays centered.
  */
 function computeZoomFit(): number {
-  if (activeWorldWidth === 0 || activeWorldHeight === 0) return 1;
-  const aspect = window.innerWidth / window.innerHeight;
-  return Math.max(1, (activeWorldHeight * aspect) / activeWorldWidth);
+  return 1;
 }
 
 /**
@@ -46,8 +44,6 @@ function clampCameraToWorld(camera: THREE.OrthographicCamera): void {
   } else {
     camera.position.z = Math.max(fh / 2, Math.min(activeWorldHeight - fh / 2, camera.position.z));
   }
-
-  camera.lookAt(camera.position.x, 0, camera.position.z);
 }
 
 /** Create an orthographic camera sized to show the full world bounds. */
@@ -185,9 +181,12 @@ export function zoomBy(factor: number): void {
   currentZoom = Math.min(config.zoomMax, currentZoom);
 
   // Lower bound: zoom-fit (gated by allowOutOfBoundsView flag)
+  const fit = computeZoomFit();
   if (!config.allowOutOfBoundsView) {
-    currentZoom = Math.max(computeZoomFit(), currentZoom);
+    currentZoom = Math.max(fit, currentZoom);
   }
+  // Snap to floor when within floating-point drift of the limit
+  if (Math.abs(currentZoom - fit) < 0.001) currentZoom = fit;
 
   const aspect = window.innerWidth / window.innerHeight;
   const frustumHeight = activeWorldHeight / currentZoom;
