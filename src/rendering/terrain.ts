@@ -13,7 +13,6 @@ export function createTerrain(scene: THREE.Scene, worldWidth: number, worldHeigh
 
 /** Resize the terrain plane to new world bounds and recenter it. */
 export function resizeTerrain(mesh: THREE.Mesh, worldWidth: number, worldHeight: number): void {
-  mesh.geometry.dispose();
   mesh.geometry = buildPlaneGeometry(worldWidth, worldHeight);
   mesh.position.set(worldWidth / 2, 0, worldHeight / 2);
 }

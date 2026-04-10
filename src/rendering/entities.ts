@@ -31,7 +31,6 @@ export function createEntities(scene: THREE.Scene): THREE.InstancedMesh {
  * so cones remain visually proportional to the world at any scale.
  */
 export function rebuildEntityGeometry(mesh: THREE.InstancedMesh, worldWidth: number): void {
-  mesh.geometry.dispose();
   mesh.geometry = buildConeGeometry(worldWidth);
 }
 

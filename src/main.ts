@@ -6,12 +6,14 @@ import { createTerrain, resizeTerrain } from './rendering/terrain.ts';
 import { createEntities, updateEntities, rebuildEntityGeometry } from './rendering/entities.ts';
 import { viewerState } from './state.ts';
 import { createConnection } from './net/connection.ts';
+import { initCameraInput } from './input/camera-input.ts';
 import config from './config.ts';
 
 const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
 const { renderer, scene } = createScene(canvas);
 
 const camera = createCamera(config.worldWidth, config.worldHeight);
+initCameraInput(canvas);
 const terrainMesh = createTerrain(scene, config.worldWidth, config.worldHeight);
 const entityMesh = createEntities(scene);
 
@@ -35,9 +37,16 @@ const timer = new THREE.Timer();
 
 renderer.setAnimationLoop(() => {
   timer.update();
+
+  // Don't render until the first snapshot provides real world bounds.
+  // Rendering with placeholder geometry before the server announces the
+  // actual world size causes the WebGPU backend to allocate GPU buffers
+  // for the InstancedMesh; replacing mesh.geometry after that corrupts
+  // the internal buffer state intermittently.
+  if (viewerState.worldWidth === 0) return;
+
   if (
-    viewerState.worldWidth > 0 &&
-    (viewerState.worldWidth !== lastWorldWidth || viewerState.worldHeight !== lastWorldHeight)
+    viewerState.worldWidth !== lastWorldWidth || viewerState.worldHeight !== lastWorldHeight
   ) {
     lastWorldWidth = viewerState.worldWidth;
     lastWorldHeight = viewerState.worldHeight;

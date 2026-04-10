@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 20260409
+### Added
+- World-bounds clamping: pan edges cannot cross world bounds, zoom-out capped at world-fit (zoom=1, full world height visible)
+- `panStart`, `panMove`, `panEnd`, `zoomBy` action API exported from `camera.ts`
+- `clampCameraToWorld` internal helper enforces position constraints after every camera mutation
+- `config.allowOutOfBoundsView` debug flag disables zoom and pan clamps
+- `src/input/camera-input.ts` module owns all DOM event binding for the camera
+
+### Changed
+- Pan input changed from middle/right-click to left-click drag
+- `camera.ts` is now DOM-free — contains no `addEventListener` calls
+- `handleResize` re-evaluates zoom-fit and clamps camera position after window resize
+
 ## [0.2.0] - 20260406
 ### Added
 - Binary wire protocol deserializer for SNAPSHOT (0x01) and STATE_UPDATE (0x02) messages with little-endian discipline and parse-boundary validation (`src/protocol/`)
