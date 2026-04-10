@@ -3,8 +3,8 @@ docType: slice-tasks
 parent: user/slices/108-slice.camera-constraints-and-pan.md
 project: migratory-viewer
 dateCreated: 20260408
-dateUpdated: 20260409
-status: in_progress
+dateUpdated: 20260410
+status: complete
 dependencies:
   - slice 100 (Project Scaffold) — complete
   - slice 101 (WebSocket Consumer and Live Entity Rendering) — complete
@@ -188,10 +188,10 @@ Follows the Verification Walkthrough in [108-slice.camera-constraints-and-pan.md
 - [x] **5.7 Window resize while panned**
   - Pan off-center at medium zoom. Resize the browser window smaller (and narrower). Camera stays inside world bounds after resize. Resize larger: same check.
 
-- [ ] **5.8 World bounds change**
+- [x] **5.8 World bounds change**
   - If the server supports reconfiguring world size across restarts (or a test scenario does), reconnect with a different `worldWidth` / `worldHeight`. Camera recenters, zoom resets, new clamp boundaries are active — panning immediately clamps to the new bounds.
 
-- [ ] **5.9 Debug escape hatch**
+- [x] **5.9 Debug escape hatch**
   - Set `allowOutOfBoundsView: true` in [src/config.ts](../../../src/config.ts); reload. Repeat 5.4 and 5.5: pan can now push the frustum outside world bounds; wheel can zoom past the world-fit level (empty area visible around the world).
   - Set back to `false`; confirm clamps are active again.
 
