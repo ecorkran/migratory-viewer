@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 20260410
+### Added
+- TPS (ticks per second) counter in HUD — measures actual server tick rate received over a 1-second rolling window, distinguishing simulation update rate from render FPS
+
 ## [0.4.0] - 20260410
 ### Added
 - HUD overlay panel (`src/ui/hud.ts`, `src/ui/hud.css`) displaying connection status, tick counter, entity count, FPS, and profile legend with color swatches

@@ -14,7 +14,7 @@ projectState: >
   or frame rate. ViewerState holds all needed data; this slice surfaces it in DOM.
 dateCreated: 20260410
 dateUpdated: 20260410
-status: in_progress
+status: complete
 ---
 
 # Slice Tasks: HUD and Status Panel

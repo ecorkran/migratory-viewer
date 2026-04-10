@@ -11,6 +11,28 @@ A lightweight, append-only record of development activity. Newest entries first.
 
 ## 20260410
 
+### Slice 105: HUD and Status Panel — Complete
+
+**Commits this session:**
+- `6de346c` feat(ui): add HUD overlay with status, stats, and profile legend
+- `e88d5f4` feat(ui): wire HUD into render loop with pre-snapshot display
+- `5c8985d` docs: update slice 105 status, verification walkthrough, and CHANGELOG
+- `0be4c9f` feat(ui): add TPS counter to HUD showing server ticks per second
+
+**Delivered:**
+- `src/ui/hud.ts` + `src/ui/hud.css` — vanilla DOM overlay, no Three.js dependency
+- Connection status (colored dot + label), tick counter, entity count, FPS (EMA-smoothed), TPS (1-sec rolling window), profile legend with color swatches
+- `H` key toggles visibility; `pointer-events: none` for canvas click-through
+- `updateHud` called before render early-return so HUD is visible pre-snapshot
+- Profile legend cached — only rebuilds on entity count change
+- TPS counter added post-design to distinguish render FPS from server tick rate (useful for ongoing server optimization effort)
+
+**Key observations:**
+- 120 FPS vs ~12-20 TPS: render loop redraws at monitor refresh rate; entity positions only update on server tick. Motion appears smooth due to consistent frame pacing, not interpolation.
+- No client-side position interpolation exists yet — could be a future enhancement.
+
+---
+
 ### Slice 108: Camera Constraints and Pan — In Progress
 
 **Commits this session:**

@@ -7,7 +7,7 @@ dependencies: [101-websocket-consumer-and-live-entity-rendering]
 interfaces: []
 dateCreated: 20260410
 dateUpdated: 20260410
-status: in_progress
+status: complete
 ---
 
 # Slice Design: HUD and Status Panel
