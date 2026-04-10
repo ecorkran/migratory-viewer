@@ -10,6 +10,7 @@ export interface HudElements {
   tickValue: HTMLSpanElement;
   entityCountValue: HTMLSpanElement;
   fpsValue: HTMLSpanElement;
+  tpsValue: HTMLSpanElement;
   profileSection: HTMLDivElement;
 }
 
@@ -25,6 +26,8 @@ const DOT_CLASS: Record<ConnectionStatus, string> = {
 let smoothFps = 0;
 let lastConnectionStatus: ConnectionStatus | null = null;
 let cachedEntityCount = -1;
+let lastTick = -1;
+const tickTimestamps: number[] = [];
 
 /** Create the HUD DOM elements and attach to the document. */
 export function createHud(): HudElements {
@@ -70,9 +73,17 @@ export function createHud(): HudElements {
   fpsRow.textContent = 'FPS: ';
   fpsRow.appendChild(fpsValue);
 
+  const tpsRow = document.createElement('div');
+  const tpsValue = document.createElement('span');
+  tpsValue.className = 'hud-tps';
+  tpsValue.textContent = '--';
+  tpsRow.textContent = 'TPS: ';
+  tpsRow.appendChild(tpsValue);
+
   statsSection.appendChild(tickRow);
   statsSection.appendChild(entityRow);
   statsSection.appendChild(fpsRow);
+  statsSection.appendChild(tpsRow);
 
   // --- Profile legend section ---
   const profileSection = document.createElement('div');
@@ -102,6 +113,7 @@ export function createHud(): HudElements {
     tickValue,
     entityCountValue,
     fpsValue,
+    tpsValue,
     profileSection,
   };
 }
@@ -127,6 +139,18 @@ export function updateHud(hud: HudElements, state: ViewerState, delta: number): 
   } else {
     hud.fpsValue.textContent = '--';
   }
+
+  // --- TPS counter (ticks per second received from server) ---
+  const now = performance.now();
+  if (state.currentTick !== lastTick) {
+    lastTick = state.currentTick;
+    tickTimestamps.push(now);
+  }
+  const windowStart = now - 1000;
+  while (tickTimestamps.length > 0 && tickTimestamps[0] < windowStart) {
+    tickTimestamps.shift();
+  }
+  hud.tpsValue.textContent = tickTimestamps.length > 0 ? String(tickTimestamps.length) : '--';
 
   // --- Profile legend (rebuild only on entity count change) ---
   if (state.entityCount !== cachedEntityCount) {
