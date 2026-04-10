@@ -1,0 +1,67 @@
+#hud {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  padding: 8px 12px;
+  pointer-events: none;
+}
+
+.hud-section {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hud-section:last-child {
+  border-bottom: none;
+}
+
+.hud-connection-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.dot-connected {
+  background-color: #4caf50;
+}
+
+.dot-connecting {
+  background-color: #ffca28;
+}
+
+.dot-disconnected {
+  background-color: #ef5350;
+}
+
+.dot-reconnecting {
+  background-color: #ffca28;
+  animation: hud-pulse 1.2s infinite;
+}
+
+@keyframes hud-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.hud-color-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.hud-profile-row {
+  padding: 1px 0;
+}
