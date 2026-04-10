@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 20260410
+### Added
+- HUD overlay panel (`src/ui/hud.ts`, `src/ui/hud.css`) displaying connection status, tick counter, entity count, FPS, and profile legend with color swatches
+- Connection status indicator with colored dot (green/yellow/red) and pulsing animation for reconnecting state
+- FPS counter with exponential moving average smoothing
+- Profile legend with per-profile entity counts and color swatches from `config.profileColors`
+- `H` key toggles HUD visibility; click-through (`pointer-events: none`) preserves canvas interaction
+- HUD updates before the render early-return, showing connection status while awaiting first snapshot
+
 ## [0.3.0] - 20260409
 ### Added
 - World-bounds clamping: pan edges cannot cross world bounds, zoom-out capped at world-fit (zoom=1, full world height visible)
