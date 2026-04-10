@@ -7,6 +7,7 @@ import { createEntities, updateEntities, rebuildEntityGeometry } from './renderi
 import { viewerState } from './state.ts';
 import { createConnection } from './net/connection.ts';
 import { initCameraInput } from './input/camera-input.ts';
+import { createHud, updateHud } from './ui/hud.ts';
 import config from './config.ts';
 
 const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
@@ -32,11 +33,18 @@ window.addEventListener('resize', () => {
 const connection = createConnection(viewerState);
 connection.connect(config.serverUrl);
 
+const hud = createHud();
+
 // Render loop — setAnimationLoop defers first frame until GPU init is complete
 const timer = new THREE.Timer();
 
 renderer.setAnimationLoop(() => {
   timer.update();
+  const delta = timer.getDelta();
+
+  // Update HUD before the early return so connection status is visible
+  // while waiting for the first snapshot.
+  updateHud(hud, viewerState, delta);
 
   // Don't render until the first snapshot provides real world bounds.
   // Rendering with placeholder geometry before the server announces the
