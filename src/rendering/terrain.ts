@@ -13,8 +13,10 @@ export function createTerrain(scene: THREE.Scene, worldWidth: number, worldHeigh
 
 /** Resize the terrain plane to new world bounds and recenter it. */
 export function resizeTerrain(mesh: THREE.Mesh, worldWidth: number, worldHeight: number): void {
-  mesh.geometry.dispose();
+  const oldGeometry = mesh.geometry;
   mesh.geometry = buildPlaneGeometry(worldWidth, worldHeight);
+  // Defer disposal so the GPU finishes any in-flight commands referencing the old buffer.
+  requestAnimationFrame(() => oldGeometry.dispose());
   mesh.position.set(worldWidth / 2, 0, worldHeight / 2);
 }
 

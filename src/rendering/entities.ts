@@ -31,8 +31,10 @@ export function createEntities(scene: THREE.Scene): THREE.InstancedMesh {
  * so cones remain visually proportional to the world at any scale.
  */
 export function rebuildEntityGeometry(mesh: THREE.InstancedMesh, worldWidth: number): void {
-  mesh.geometry.dispose();
+  const oldGeometry = mesh.geometry;
   mesh.geometry = buildConeGeometry(worldWidth);
+  // Defer disposal so the GPU finishes any in-flight commands referencing the old buffer.
+  requestAnimationFrame(() => oldGeometry.dispose());
 }
 
 function buildConeGeometry(worldWidth: number): THREE.ConeGeometry {
