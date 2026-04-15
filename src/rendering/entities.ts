@@ -17,7 +17,7 @@ let lastAppliedCount = -1;
  * via the WebSocket consumer.
  */
 export function createEntities(scene: THREE.Scene): THREE.InstancedMesh {
-  const geometry = buildConeGeometry(config.worldWidth);
+  const geometry = buildConeGeometry(config.worldWidth, config.worldHeight);
   const material = new THREE.MeshLambertMaterial();
   const mesh = new THREE.InstancedMesh(geometry, material, config.maxEntityCount);
   mesh.count = 0;
@@ -30,13 +30,14 @@ export function createEntities(scene: THREE.Scene): THREE.InstancedMesh {
  * server delivers a snapshot whose world bounds differ from the current ones,
  * so cones remain visually proportional to the world at any scale.
  */
-export function rebuildEntityGeometry(mesh: THREE.InstancedMesh, worldWidth: number): void {
-  mesh.geometry = buildConeGeometry(worldWidth);
+export function rebuildEntityGeometry(mesh: THREE.InstancedMesh, worldWidth: number, worldHeight: number): void {
+  mesh.geometry = buildConeGeometry(worldWidth, worldHeight);
 }
 
-function buildConeGeometry(worldWidth: number): THREE.ConeGeometry {
-  const radius = worldWidth * config.coneRadiusRatio;
-  const height = worldWidth * config.coneHeightRatio;
+function buildConeGeometry(worldWidth: number, worldHeight: number): THREE.ConeGeometry {
+  const ref = Math.min(worldWidth, worldHeight);
+  const radius = ref * config.coneRadiusRatio;
+  const height = ref * config.coneHeightRatio;
   const geometry = new THREE.ConeGeometry(radius, height, config.coneSegments);
   // Rotate so the point faces +Z direction (forward)
   geometry.rotateX(Math.PI / 2);

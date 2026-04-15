@@ -60,7 +60,7 @@ renderer.setAnimationLoop(() => {
     lastWorldHeight = viewerState.worldHeight;
     resizeTerrain(terrainMesh, lastWorldWidth, lastWorldHeight);
     resizeCameraToWorld(camera, lastWorldWidth, lastWorldHeight);
-    rebuildEntityGeometry(entityMesh, lastWorldWidth);
+    rebuildEntityGeometry(entityMesh, lastWorldWidth, lastWorldHeight);
   }
   updateCamera();
   updateEntities(entityMesh, viewerState);
