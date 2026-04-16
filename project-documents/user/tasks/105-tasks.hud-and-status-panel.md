@@ -13,7 +13,7 @@ projectState: >
   The user has no way to see connection status, tick count, entity count, profile legend,
   or frame rate. ViewerState holds all needed data; this slice surfaces it in DOM.
 dateCreated: 20260410
-dateUpdated: 20260410
+dateUpdated: 20260411
 status: complete
 ---
 
@@ -142,42 +142,42 @@ status: complete
 
 Run `pnpm dev` with a connected world server. Follow the verification walkthrough from the slice design.
 
-- [ ] **7.1 HUD visible on load**
+- [x] **7.1 HUD visible on load**
   - Open the viewer in a browser. Before the server connects, HUD is visible in the top-left showing connection status (`connecting`, yellow dot), tick `0`, entities `0`, no profile rows.
-  - [ ] Success: HUD panel renders in the correct position with pre-snapshot state.
+  - [x] Success: HUD panel renders in the correct position with pre-snapshot state.
 
-- [ ] **7.2 Connection status transitions**
+- [x] **7.2 Connection status transitions**
   - Once connected: status shows `connected` (green dot). Stop the server: status changes to `reconnecting` (yellow pulsing dot). Restart the server: status returns to `connected` (green dot).
-  - [ ] Success: all four connection states (`disconnected`, `connecting`, `connected`, `reconnecting`) display correctly with the right dot color and text.
+  - [x] Success: all four connection states (`disconnected`, `connecting`, `connected`, `reconnecting`) display correctly with the right dot color and text.
 
-- [ ] **7.3 Tick and entity count**
+- [x] **7.3 Tick and entity count**
   - With server connected, tick counter increments. Entity count shows the snapshot value (e.g., 300).
-  - [ ] Success: tick value increases each frame; entity count matches the server's snapshot count.
+  - [x] Success: tick value increases each frame; entity count matches the server's snapshot count.
 
-- [ ] **7.4 FPS counter**
+- [x] **7.4 FPS counter**
   - FPS stabilizes around 60 (or monitor refresh rate). Value is smooth and integer, not jumping erratically.
-  - [ ] Success: FPS displays a stable smoothed value.
+  - [x] Success: FPS displays a stable smoothed value.
 
-- [ ] **7.5 Profile legend**
+- [x] **7.5 Profile legend**
   - Legend shows one row per profile type with the correct color swatch (matching `config.profileColors`) and count per profile. Sum of counts equals total entity count.
-  - [ ] Success: profile colors match config palette; per-profile counts sum to total entity count.
+  - [x] Success: profile colors match config palette; per-profile counts sum to total entity count.
 
-- [ ] **7.6 Toggle visibility**
+- [x] **7.6 Toggle visibility**
   - Press `H` — HUD disappears. Press `H` again — HUD reappears with current values (not stale).
-  - [ ] Success: toggle works cleanly in both directions.
+  - [x] Success: toggle works cleanly in both directions.
 
-- [ ] **7.7 Click-through panning**
+- [x] **7.7 Click-through panning**
   - Left-click drag starting from the HUD area pans the camera normally.
-  - [ ] Success: canvas interaction is not blocked by the HUD.
+  - [x] Success: canvas interaction is not blocked by the HUD.
 
 ### 8. Finalization
 
-- [ ] **8.1 Update slice status**
+- [x] **8.1 Update slice status**
   - Update [105-slice.hud-and-status-panel.md](../slices/105-slice.hud-and-status-panel.md) `status: complete`, bump `dateUpdated`.
   - Update this task file `status: complete`, bump `dateUpdated`.
   - Check off slice 105 in [100-slices.viewer-foundation.md](../architecture/100-slices.viewer-foundation.md).
 
-- [ ] **8.2 Commit: docs and slice completion**
+- [x] **8.2 Commit: docs and slice completion**
   - Semantic commit: `docs: mark slice 105 complete`.
   - Include only the updated slice/task/arch doc files.
 
