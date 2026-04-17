@@ -97,11 +97,23 @@ export function createHud(rig: CameraRig): HudElements {
   cameraModeBtn.className = 'camera-mode-btn';
   cameraModeBtn.textContent = '3D View';
 
+  // Use a short delay on click to distinguish single-click (toggle) from
+  // double-click (reset). dblclick cancels the pending single-click timer.
+  let clickTimer: ReturnType<typeof setTimeout> | null = null;
+
   cameraModeBtn.addEventListener('click', () => {
-    toggleCameraMode(rig);
+    if (clickTimer !== null) return; // dblclick already cancelled this
+    clickTimer = setTimeout(() => {
+      clickTimer = null;
+      toggleCameraMode(rig);
+    }, 220);
   });
 
   cameraModeBtn.addEventListener('dblclick', () => {
+    if (clickTimer !== null) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
     resetPerspective(rig);
   });
 
