@@ -86,13 +86,13 @@ const config: ViewerConfig = {
   allowOutOfBoundsView: false,
 
   perspectiveFov: 50,
-  defaultPitch: 30,
+  defaultPitch: 24,
   defaultYaw: 0,
   pitchMin: 15,
   pitchMax: 85,
   dollyMinRatio: 0.05,
   dollyMaxRatio: 3.0,
-  dollyDefaultRatio: 1.8,
+  dollyDefaultRatio: 1.2,
   modeTransitionSeconds: 0.5,
 };
 
