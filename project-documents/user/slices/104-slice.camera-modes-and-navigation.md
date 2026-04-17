@@ -7,7 +7,7 @@ dependencies: [100-project-scaffold-and-rendering-core, 105-hud-and-status-panel
 interfaces: []
 dateCreated: 20260416
 dateUpdated: 20260416
-status: draft
+status: complete
 ---
 
 # Slice Design: Camera Modes and Navigation

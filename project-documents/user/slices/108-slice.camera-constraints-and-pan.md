@@ -5,6 +5,7 @@ project: migratory-viewer
 dateCreated: 20260408
 dateUpdated: 20260410
 status: complete
+slice: camera-constraints-and-pan
 ---
 
 # Slice Design: Camera Constraints and Pan

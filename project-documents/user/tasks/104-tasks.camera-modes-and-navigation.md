@@ -3,8 +3,8 @@ docType: slice-tasks
 parent: user/slices/104-slice.camera-modes-and-navigation.md
 project: migratory-viewer
 dateCreated: 20260416
-dateUpdated: 20260416
-status: not_started
+dateUpdated: 20260417
+status: complete
 dependencies:
   - slice 100 (Project Scaffold) — complete
   - slice 105 (HUD and Status Panel) — complete
@@ -42,7 +42,7 @@ macOS note: macOS trackpads deliver right-click as a two-finger tap only when "S
 
 ### 1. Config additions
 
-- [ ] **1.1 Add perspective and transition config fields to `config.ts`**
+- [x] **1.1 Add perspective and transition config fields to `config.ts`**
   - Add all new fields to [src/config.ts](../../../src/config.ts) alongside the existing flat structure. Do not introduce a camera sub-object.
   - Fields and defaults:
     ```
@@ -58,14 +58,14 @@ macOS note: macOS trackpads deliver right-click as a two-finger tap only when "S
     ```
   - Success: `pnpm tsc --noEmit` clean; new fields reachable from `camera.ts` and `hud.ts` via existing import.
 
-- [ ] **1.2 Commit: config additions**
+- [x] **1.2 Commit: config additions**
   - Semantic commit on the slice branch: `feat(config): add perspective camera config fields`.
 
 ### 2. CameraRig refactor (ortho-only, parity)
 
 This task replaces module-level globals in `camera.ts` with a `CameraRig` instance and updates all call sites. No perspective mode yet — ortho behavior must be identical to pre-refactor at the end of this task.
 
-- [ ] **2.1 Define `CameraRig` interface and internal state shape**
+- [x] **2.1 Define `CameraRig` interface and internal state shape**
   - In [src/rendering/camera.ts](../../../src/rendering/camera.ts), define and export:
     ```ts
     export type CameraMode = 'ortho' | 'perspective';
@@ -85,7 +85,7 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
     ```
   - Success: types compile, no existing exports changed yet.
 
-- [ ] **2.2 Add `createCameraRig` (replaces `createCamera`)**
+- [x] **2.2 Add `createCameraRig` (replaces `createCamera`)**
   - Implement `export function createCameraRig(worldWidth: number, worldHeight: number): CameraRig`.
   - Creates the ortho camera with the same geometry as the current `createCamera` (aspect-based frustum, camY = max(w, h), lookAt world center).
   - Creates a PerspectiveCamera placeholder (use `config.perspectiveFov`, same near/far pattern; position TBD — filled in task 4).
@@ -94,7 +94,7 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
   - Keep `createCamera` temporarily as a thin wrapper calling `createCameraRig` so existing callers don't break until task 2.5.
   - Success: `pnpm tsc --noEmit` clean.
 
-- [ ] **2.3 Rewrite rig-scoped lifecycle functions**
+- [x] **2.3 Rewrite rig-scoped lifecycle functions**
   - Implement these exports, replacing the module-global versions:
     - `resizeRigToWorld(rig, w, h)` — mirrors `resizeCameraToWorld`, updates `activeWorldWidth/Height` and ortho frustum, clamps `dollyDistance` into the new valid range, snaps `orbitTarget` to world center.
     - `handleRigResize(rig)` — mirrors `handleResize`, recomputes ortho frustum on window resize.
@@ -102,7 +102,7 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
   - Keep old function names as thin wrappers until task 2.5. 
   - Success: TypeScript clean; ortho behavior unchanged.
 
-- [ ] **2.4 Rewrite rig-scoped action functions**
+- [x] **2.4 Rewrite rig-scoped action functions**
   - Implement these exports, all taking `rig: CameraRig` as first argument:
     - `panStart(rig, x, y)` — sets `rig.panOrigin`.
     - `panMove(rig, x, y)` — in ortho mode, applies existing pan math + clamp. In perspective mode (stubbed for now — a no-op or logs a warning).
@@ -116,7 +116,7 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
     - `resetPerspective(rig)` — stub (implemented in task 4).
   - Success: TypeScript clean.
 
-- [ ] **2.5 Update `main.ts` to use rig API**
+- [x] **2.5 Update `main.ts` to use rig API**
   - In [src/main.ts](../../../src/main.ts):
     - Replace `createCamera` with `createCameraRig`.
     - Replace `resizeCameraToWorld` with `resizeRigToWorld`.
@@ -127,12 +127,12 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
   - Remove all old function imports from `camera.ts`.
   - Success: `pnpm dev` — viewer loads, ortho pan and zoom work identically to before.
 
-- [ ] **2.6 Test: ortho parity**
+- [x] **2.6 Test: ortho parity**
   - Run `pnpm tsc --noEmit` — clean.
   - Run `pnpm test` — all tests pass.
   - Manual: left-drag pans, wheel zooms, pan clamp and zoom-fit clamp still work. HUD still updates.
 
-- [ ] **2.7 Update `camera-input.ts` to accept rig**
+- [x] **2.7 Update `camera-input.ts` to accept rig**
   - Change `initCameraInput(canvas)` signature to `initCameraInput(canvas, rig)`.
   - Pass `rig` through to `panStart(rig, ...)`, `panMove(rig, ...)`, `panEnd(rig)`, `zoomBy(rig, ...)`.
   - Add right-mouse bindings:
@@ -142,12 +142,12 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
     - `canvas.addEventListener('contextmenu', ...)` — `event.preventDefault()` to suppress browser context menu.
   - Success: TypeScript clean; right-drag does nothing visible (stub), left-drag and wheel unchanged.
 
-- [ ] **2.8 Commit: CameraRig refactor (ortho-only)**
+- [x] **2.8 Commit: CameraRig refactor (ortho-only)**
   - Semantic commit: `refactor(camera): introduce CameraRig, migrate callers to rig API`.
 
 ### 3. HUD camera mode button
 
-- [ ] **3.1 Add camera mode button to HUD DOM**
+- [x] **3.1 Add camera mode button to HUD DOM**
   - In [src/ui/hud.ts](../../../src/ui/hud.ts):
     - Change `createHud()` signature to `createHud(rig: CameraRig)`.
     - Add a `<button class="camera-mode-btn">3D View</button>` element at the bottom of the HUD panel (below the existing profile section).
@@ -160,7 +160,7 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
   - Update `main.ts` call to `createHud(rig)` — pass the rig.
   - Success: button appears in HUD, TypeScript clean, `H` key still toggles HUD, `V` key logs no errors.
 
-- [ ] **3.2 Add button styles to `hud.css`**
+- [x] **3.2 Add button styles to `hud.css`**
   - In [src/ui/hud.css](../../../src/ui/hud.css), add styles for `.camera-mode-btn`:
     - `display: block; width: 100%` — spans the HUD panel width.
     - Visible affordance: matching border style, subtle hover background.
@@ -168,7 +168,7 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
     - `margin-top: 8px` — visual separation from the profile legend above.
   - Success: button is visually distinct, clickable, consistent with HUD aesthetic.
 
-- [ ] **3.3 Add label update to `updateHud`**
+- [x] **3.3 Add label update to `updateHud`**
   - In `updateHud(hud, state, delta, rig)` — add `rig` parameter.
   - Read `getCameraMode(rig)` each frame. Only write to `hud.cameraModeBtn.textContent` when the mode has changed (use a `cachedMode` local or compare against the current button text).
     - `ortho` → `"3D View"`
@@ -176,15 +176,15 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
   - Update the `main.ts` call to `updateHud(hud, viewerState, delta, rig)`.
   - Success: button label is correct on load ("3D View"); updates when mode changes (testable once task 5 is done).
 
-- [ ] **3.4 Test: HUD button visible**
+- [x] **3.4 Test: HUD button visible**
   - `pnpm dev` — HUD shows "3D View" button at the bottom. Button is clickable (no JS errors). `V` key press produces no errors. HUD `H` toggle still works.
 
-- [ ] **3.5 Commit: HUD camera mode button**
+- [x] **3.5 Commit: HUD camera mode button**
   - Semantic commit: `feat(hud): add camera mode toggle button and V keybinding`.
 
 ### 4. Perspective camera implementation
 
-- [ ] **4.1 Implement `resetPerspective` and default framing**
+- [x] **4.1 Implement `resetPerspective` and default framing**
   - In [src/rendering/camera.ts](../../../src/rendering/camera.ts), implement `resetPerspective(rig)`:
     - Set `pitch` to `config.defaultPitch` (in degrees; convert to radians internally with a helper `toRad`).
     - Set `yaw` to `config.defaultYaw`.
@@ -204,11 +204,11 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
     ```
   - Success: calling `resetPerspective` positions the perspective camera at a sensible view of the world.
 
-- [ ] **4.2 Test: perspective camera framing**
+- [x] **4.2 Test: perspective camera framing**
   - Temporarily force `rig.mode` to `'perspective'` and call `resetPerspective`. Verify in the browser that the world is visible from the expected angle (roughly 55° above ground, looking at world center).
   - Revert the mode override after confirming.
 
-- [ ] **4.3 Implement orbit action**
+- [x] **4.3 Implement orbit action**
   - Implement `orbitStart(rig, x, y)` — store `orbitOrigin = { x, y }`.
   - Implement `orbitMove(rig, x, y)`:
     - If `orbitOrigin === null` or mode is not `'perspective'`: return.
@@ -221,10 +221,10 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
   - Implement `orbitEnd(rig)` — clear `orbitOrigin`.
   - Success: in perspective mode (forced temporarily), right-drag rotates the view around the orbit target without flipping past pitch bounds.
 
-- [ ] **4.4 Test: orbit controls**
+- [x] **4.4 Test: orbit controls**
   - Force perspective mode. Right-drag orbits. Drag past the upper and lower pitch limits — motion stops at clamps, no horizon flip. Left-drag is a no-op (perspective pan not yet implemented).
 
-- [ ] **4.5 Implement perspective pan**
+- [x] **4.5 Implement perspective pan**
   - In `panMove(rig, x, y)`, implement the perspective branch:
     ```
     fovRad = toRad(config.perspectiveFov)
@@ -236,25 +236,25 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
     - Call `applyPerspectiveCamera(rig)` after mutating target.
   - Success: left-drag in perspective mode translates the scene under the camera.
 
-- [ ] **4.6 Test: perspective pan**
+- [x] **4.6 Test: perspective pan**
   - Force perspective mode. Left-drag — scene slides under camera in the dragged direction. Test at yaw=0 and after orbiting ~90° yaw to confirm it stays correct regardless of camera orientation.
 
-- [ ] **4.7 Implement dolly (perspective zoom)**
+- [x] **4.7 Implement dolly (perspective zoom)**
   - In `zoomBy(rig, factor)`, implement the perspective branch:
     - `dollyDistance = dollyDistance / factor` (scroll up = factor > 1 = zooms in = reduces dolly).
     - Clamp: `dollyDistance = clamp(dollyDistance, config.dollyMinRatio * maxWH, config.dollyMaxRatio * maxWH)`.
     - Call `applyPerspectiveCamera(rig)`.
   - Success: wheel scrolls in perspective mode; dolly reaches min/max and stops.
 
-- [ ] **4.8 Test: dolly clamps**
+- [x] **4.8 Test: dolly clamps**
   - Force perspective mode. Scroll wheel to maximum zoom in — movement stops at `dollyMin`. Scroll out to maximum — stops at `dollyMax`. Scrolling past limits has no visual effect.
 
-- [ ] **4.9 Commit: perspective camera controls**
+- [x] **4.9 Commit: perspective camera controls**
   - Semantic commit: `feat(camera): add perspective mode with orbit, pan, and dolly`.
 
 ### 5. Mode toggle and animation
 
-- [ ] **5.1 Implement instant mode toggle (no animation)**
+- [x] **5.1 Implement instant mode toggle (no animation)**
   - Implement `toggleCameraMode(rig)`:
     - If transitioning, return (block double-tap during animation).
     - If `mode === 'ortho'`:
@@ -267,10 +267,10 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
     - Sync the new active camera's orbit target (ortho camera re-centers position above `orbitTarget`).
   - Success: clicking the HUD button toggles between modes. Entities visible in both. Button label updates.
 
-- [ ] **5.2 Test: instant toggle**
+- [x] **5.2 Test: instant toggle**
   - `pnpm dev`. Click "3D View" — switches to perspective, entities visible, button reads "2D View". Click again — back to ortho, button reads "3D View". `V` key also toggles. Double-click resets perspective framing.
 
-- [ ] **5.3 Implement animated transition**
+- [x] **5.3 Implement animated transition**
   - Extend `toggleCameraMode(rig)` to set `rig.transition = { fromMode, elapsed: 0, duration: config.modeTransitionSeconds }` instead of snapping immediately.
   - Implement animation in `updateRig(rig, deltaSeconds)`:
     - If `transition === null`, return.
@@ -281,72 +281,72 @@ This task replaces module-level globals in `camera.ts` with a `CameraRig` instan
   - If animation looks wrong (pop, jitter), fall back to the instant swap from 5.1 and note it in the devlog. Do not spend more than one debugging iteration on it.
   - Success: smooth visual transition over ~0.5s, no perceived pop. Or instant swap flagged as intentional fallback.
 
-- [ ] **5.4 Test: animated transition**
+- [x] **5.4 Test: animated transition**
   - Click toggle: observe smooth transition over ~0.5s. Toggle back: same. `V` key: same. During transition, clicking again has no effect (blocked).
 
-- [ ] **5.5 Commit: mode toggle and animation**
+- [x] **5.5 Commit: mode toggle and animation**
   - Semantic commit: `feat(camera): add perspective/ortho mode toggle with animated transition`.
 
 ### 6. Persistence and world-resize behavior
 
-- [ ] **6.1 Verify perspective state persists across toggles**
+- [x] **6.1 Verify perspective state persists across toggles**
   - Enter perspective, orbit and dolly to a non-default framing. Toggle to ortho. Toggle back — perspective framing should be identical. No extra code needed if `toggleCameraMode` does not call `resetPerspective` (it should not).
   - Success: framing persists.
 
-- [ ] **6.2 Verify `resizeRigToWorld` behavior**
+- [x] **6.2 Verify `resizeRigToWorld` behavior**
   - On world bounds change (new snapshot): `orbitTarget` snaps to new world center, `dollyDistance` clamped into new valid range, `pitch`/`yaw` preserved.
   - Confirm in `resizeRigToWorld` that these rules are implemented. Add clamping code if missing.
   - Success: switching world sizes does not blow up perspective state.
 
-- [ ] **6.3 Commit: persistence verification**
+- [x] **6.3 Commit: persistence verification**
   - Only a commit if code changes were required in 6.2. Otherwise, note as confirmed in task file.
 
 ### 7. Manual verification
 
 Run `pnpm dev` with a live server connection for all checks.
 
-- [ ] **7.1 Start in ortho**
+- [x] **7.1 Start in ortho**
   - Viewer loads. HUD shows "3D View" button at bottom. Mode is ortho. Existing pan and zoom work. HUD metrics update normally.
 
-- [ ] **7.2 Toggle to perspective**
+- [x] **7.2 Toggle to perspective**
   - Click "3D View" or press `V`. Transition is smooth (or instant swap, if flagged). Mode becomes perspective. Button reads "2D View". Entities visible.
 
-- [ ] **7.3 Orbit**
+- [x] **7.3 Orbit**
   - Right-drag: view rotates around orbit target. Dragging past upper/lower pitch limit stops at clamp; no horizon flip or gimbal lock artifact.
 
-- [ ] **7.4 Perspective pan**
+- [x] **7.4 Perspective pan**
   - Left-drag: scene slides in dragged direction. Test at default yaw and after orbiting ~90° — both orientations correct.
 
-- [ ] **7.5 Dolly**
+- [x] **7.5 Dolly**
   - Wheel up: camera moves closer. Wheel down: pulls back. Both stop at min/max limits.
 
-- [ ] **7.6 Toggle back to ortho**
+- [x] **7.6 Toggle back to ortho**
   - Press `V`. Returns to ortho. Button reads "3D View". Pan and zoom-fit clamp still work.
 
-- [ ] **7.7 Persistence**
+- [x] **7.7 Persistence**
   - Enter perspective, orbit and dolly to a non-default framing. Toggle to ortho, toggle back to perspective. Framing is identical to where it was left.
 
-- [ ] **7.8 Double-click reset**
+- [x] **7.8 Double-click reset**
   - While in perspective, double-click the HUD button. Camera resets to default framing (55° pitch, world center, default dolly). In ortho mode, double-click is a no-op (no reset).
 
-- [ ] **7.9 Ortho regression**
+- [x] **7.9 Ortho regression**
   - In ortho: pan with left-drag, world-bounds clamp stops at edges. Wheel zoom, zoom-fit clamp stops at world-fit level. Behavior identical to slice 108.
 
-- [ ] **7.10 HUD regression**
+- [x] **7.10 HUD regression**
   - In both modes, connection dot, FPS, TPS, entity count, and profile legend all update correctly.
 
-- [ ] **7.11 TypeScript and tests**
+- [x] **7.11 TypeScript and tests**
   - `pnpm tsc --noEmit` — clean.
   - `pnpm test` — all existing tests pass.
 
 ### 8. Finalization
 
-- [ ] **8.1 Update slice and task file status**
+- [x] **8.1 Update slice and task file status**
   - Mark [104-slice.camera-modes-and-navigation.md](../slices/104-slice.camera-modes-and-navigation.md) `status: complete`, bump `dateUpdated`.
   - Mark this task file `status: complete`, bump `dateUpdated`.
   - Mark slice 104 `[x]` in [100-slices.viewer-foundation.md](../architecture/100-slices.viewer-foundation.md).
 
-- [ ] **8.2 Commit: docs and slice completion**
+- [x] **8.2 Commit: docs and slice completion**
   - Semantic commit: `docs: mark slice 104 complete`.
 
 ## Notes
