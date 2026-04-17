@@ -1,5 +1,7 @@
 import './hud.css';
 import type { ViewerState, ConnectionStatus } from '../types';
+import type { CameraRig } from '../rendering/camera.ts';
+import { getCameraMode, toggleCameraMode, resetPerspective } from '../rendering/camera.ts';
 import config from '../config';
 
 /** Cached DOM references for the HUD elements updated each frame. */
@@ -12,6 +14,7 @@ export interface HudElements {
   fpsValue: HTMLSpanElement;
   tpsValue: HTMLSpanElement;
   profileSection: HTMLDivElement;
+  cameraModeBtn: HTMLButtonElement;
 }
 
 /** Map connection status to the corresponding CSS dot class. */
@@ -30,7 +33,7 @@ let lastTick = -1;
 const tickTimestamps: number[] = [];
 
 /** Create the HUD DOM elements and attach to the document. */
-export function createHud(): HudElements {
+export function createHud(rig: CameraRig): HudElements {
   const container = document.createElement('div');
   container.id = 'hud';
 
@@ -89,20 +92,39 @@ export function createHud(): HudElements {
   const profileSection = document.createElement('div');
   profileSection.className = 'hud-section hud-profiles';
 
+  // --- Camera mode button ---
+  const cameraModeBtn = document.createElement('button');
+  cameraModeBtn.className = 'camera-mode-btn';
+  cameraModeBtn.textContent = '3D View';
+
+  cameraModeBtn.addEventListener('click', () => {
+    toggleCameraMode(rig);
+  });
+
+  cameraModeBtn.addEventListener('dblclick', () => {
+    resetPerspective(rig);
+  });
+
   // Assemble
   container.appendChild(statusSection);
   container.appendChild(statsSection);
   container.appendChild(profileSection);
+  container.appendChild(cameraModeBtn);
   document.body.appendChild(container);
 
-  // --- H key toggle ---
+  // --- H key: toggle HUD visibility ---
+  // --- V key: toggle camera mode ---
   document.addEventListener('keydown', (event: KeyboardEvent) => {
-    const tag = (event.target as HTMLElement).tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if ((event.target as HTMLElement).isContentEditable) return;
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+    if (target.isContentEditable) return;
 
     if (event.key === 'h' || event.key === 'H') {
       container.style.display = container.style.display === 'none' ? '' : 'none';
+    }
+
+    if (event.key === 'v' || event.key === 'V') {
+      toggleCameraMode(rig);
     }
   });
 
@@ -115,11 +137,12 @@ export function createHud(): HudElements {
     fpsValue,
     tpsValue,
     profileSection,
+    cameraModeBtn,
   };
 }
 
 /** Update all HUD readouts. Called once per frame from the render loop. */
-export function updateHud(hud: HudElements, state: ViewerState, delta: number): void {
+export function updateHud(hud: HudElements, state: ViewerState, delta: number, rig: CameraRig): void {
   // --- Connection status (only update DOM on change) ---
   if (state.connectionStatus !== lastConnectionStatus) {
     lastConnectionStatus = state.connectionStatus;
@@ -184,5 +207,12 @@ export function updateHud(hud: HudElements, state: ViewerState, delta: number): 
         hud.profileSection.appendChild(row);
       }
     }
+  }
+
+  // --- Camera mode button label (update only on change) ---
+  const mode = getCameraMode(rig);
+  const expectedLabel = mode === 'ortho' ? '3D View' : '2D View';
+  if (hud.cameraModeBtn.textContent !== expectedLabel) {
+    hud.cameraModeBtn.textContent = expectedLabel;
   }
 }

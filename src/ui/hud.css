@@ -65,3 +65,23 @@
 .hud-profile-row {
   padding: 1px 0;
 }
+
+.camera-mode-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  text-align: center;
+}
+
+.camera-mode-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
