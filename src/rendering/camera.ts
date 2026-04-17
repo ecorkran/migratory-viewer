@@ -314,6 +314,10 @@ export function resetPerspective(rig: CameraRig): void {
   state.dollyDistance = config.dollyDefaultRatio * maxWH;
   state.orbitTarget.set(state.activeWorldWidth / 2, 0, state.activeWorldHeight / 2);
   state.perspInitialized = true;
+  // Cancel any in-flight transition and force perspective mode immediately
+  state.transition = null;
+  state.mode = 'perspective';
+  state.activeCamera = state.perspCamera;
   applyPerspectiveCamera(state);
 }
 
