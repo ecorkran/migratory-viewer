@@ -1,7 +1,7 @@
 import './hud.css';
 import type { ViewerState, ConnectionStatus } from '../types';
 import type { CameraRig } from '../rendering/camera.ts';
-import { getCameraMode, toggleCameraMode, resetPerspective } from '../rendering/camera.ts';
+import { getCameraMode, toggleCameraMode } from '../rendering/camera.ts';
 import config from '../config';
 
 /** Cached DOM references for the HUD elements updated each frame. */
@@ -97,21 +97,8 @@ export function createHud(rig: CameraRig): HudElements {
   cameraModeBtn.className = 'camera-mode-btn';
   cameraModeBtn.textContent = '3D View';
 
-  // Single click = toggle mode. Double click = reset perspective.
-  // dblclick fires after both click events; flag suppresses the second click's toggle.
-  let suppressNextToggle = false;
-
   cameraModeBtn.addEventListener('click', () => {
-    if (suppressNextToggle) {
-      suppressNextToggle = false;
-      return;
-    }
     toggleCameraMode(rig);
-  });
-
-  cameraModeBtn.addEventListener('dblclick', () => {
-    suppressNextToggle = true;
-    resetPerspective(rig);
   });
 
   // Assemble

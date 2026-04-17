@@ -1,7 +1,7 @@
 // This module owns all DOM event binding for the camera.
 
 import type { CameraRig } from '../rendering/camera.ts';
-import { panStart, panMove, panEnd, zoomBy, orbitStart, orbitMove, orbitEnd } from '../rendering/camera.ts';
+import { panStart, panMove, panEnd, zoomBy, orbitStart, orbitMove, orbitEnd, resetPerspective, getCameraMode } from '../rendering/camera.ts';
 
 export function initCameraInput(canvas: HTMLCanvasElement, rig: CameraRig): void {
   canvas.addEventListener('mousedown', (event: MouseEvent) => {
@@ -34,5 +34,12 @@ export function initCameraInput(canvas: HTMLCanvasElement, rig: CameraRig): void
 
   canvas.addEventListener('contextmenu', (event: Event) => {
     event.preventDefault();
+  });
+
+  // Double-click the view to reset perspective framing (perspective mode only)
+  canvas.addEventListener('dblclick', () => {
+    if (getCameraMode(rig) === 'perspective') {
+      resetPerspective(rig);
+    }
   });
 }
