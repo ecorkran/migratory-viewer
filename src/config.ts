@@ -92,7 +92,7 @@ const config: ViewerConfig = {
   pitchMax: 85,
   dollyMinRatio: 0.05,
   dollyMaxRatio: 3.0,
-  dollyDefaultRatio: 1.2,
+  dollyDefaultRatio: 0.72,
   modeTransitionSeconds: 0.5,
 };
 
