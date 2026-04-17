@@ -41,6 +41,17 @@ export interface ViewerConfig {
 
   // debug: disable camera zoom/pan clamps (pan outside world, zoom past world-fit)
   allowOutOfBoundsView: boolean;
+
+  /** Perspective camera settings. */
+  perspectiveFov: number;
+  defaultPitch: number;
+  defaultYaw: number;
+  pitchMin: number;
+  pitchMax: number;
+  dollyMinRatio: number;
+  dollyMaxRatio: number;
+  dollyDefaultRatio: number;
+  modeTransitionSeconds: number;
 }
 
 const config: ViewerConfig = {
@@ -73,6 +84,16 @@ const config: ViewerConfig = {
 
   // debug: disable camera zoom/pan clamps (pan outside world, zoom past world-fit)
   allowOutOfBoundsView: false,
+
+  perspectiveFov: 50,
+  defaultPitch: 55,
+  defaultYaw: 0,
+  pitchMin: 15,
+  pitchMax: 85,
+  dollyMinRatio: 0.05,
+  dollyMaxRatio: 3.0,
+  dollyDefaultRatio: 1.2,
+  modeTransitionSeconds: 0.5,
 };
 
 export default config;
