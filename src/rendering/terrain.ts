@@ -1,24 +1,93 @@
 import * as THREE from 'three/webgpu';
 import config from '../config.ts';
+import type { TerrainGrid } from '../types.ts';
 
-/** Create a flat ground plane in the XZ plane, sized to world bounds. */
-export function createTerrain(scene: THREE.Scene, worldWidth: number, worldHeight: number): THREE.Mesh {
-  const geometry = buildPlaneGeometry(worldWidth, worldHeight);
+/**
+ * Bilinear interpolation of terrain elevation at world-space (x, z).
+ * Returns 0 when grid is null (flat-plane fallback until TERRAIN arrives).
+ * Wire originY maps to world Z; elevation maps to world Y.
+ */
+export function getTerrainHeight(grid: TerrainGrid | null, x: number, z: number): number {
+  if (grid === null) return 0;
+  const { rows, cols, resolution, originX, originY, elevation } = grid;
+
+  const fr = Math.max(0, Math.min(rows - 1, (z - originY) / resolution - 0.5));
+  const fc = Math.max(0, Math.min(cols - 1, (x - originX) / resolution - 0.5));
+
+  const r0 = Math.floor(fr);
+  const c0 = Math.floor(fc);
+  const r1 = Math.min(r0 + 1, rows - 1);
+  const c1 = Math.min(c0 + 1, cols - 1);
+  const dr = fr - r0;
+  const dc = fc - c0;
+
+  const e00 = elevation[r0 * cols + c0];
+  const e01 = elevation[r0 * cols + c1];
+  const e10 = elevation[r1 * cols + c0];
+  const e11 = elevation[r1 * cols + c1];
+
+  return e00 * (1 - dr) * (1 - dc) +
+         e01 * (1 - dr) * dc +
+         e10 * dr * (1 - dc) +
+         e11 * dr * dc;
+}
+
+/**
+ * Create an empty terrain mesh (1×1 placeholder) added to the scene.
+ * The geometry is replaced on the first render frame by either
+ * `applyTerrainToMesh` (when TERRAIN has arrived) or `applyFlatPlane`.
+ */
+export function createTerrainMesh(scene: THREE.Scene): THREE.Mesh {
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  geometry.rotateX(-Math.PI / 2);
   const material = new THREE.MeshLambertMaterial({ color: config.groundColor });
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(worldWidth / 2, 0, worldHeight / 2);
   scene.add(mesh);
   return mesh;
 }
 
-/** Resize the terrain plane to new world bounds and recenter it. */
-export function resizeTerrain(mesh: THREE.Mesh, worldWidth: number, worldHeight: number): void {
-  mesh.geometry = buildPlaneGeometry(worldWidth, worldHeight);
-  mesh.position.set(worldWidth / 2, 0, worldHeight / 2);
+/**
+ * Rebuild the terrain mesh geometry from an elevation grid.
+ * Disposes the prior geometry to avoid GPU leaks.
+ * PlaneGeometry vertices are row-major, left-to-right, top-to-bottom (in local XY).
+ * After rotateX(-π/2), local Y maps to world -Z, so row 0 is at minimum world Z.
+ */
+export function applyTerrainToMesh(mesh: THREE.Mesh, grid: TerrainGrid): void {
+  const { rows, cols, resolution, originX, originY, elevation } = grid;
+  const geometry = new THREE.PlaneGeometry(
+    cols * resolution,
+    rows * resolution,
+    cols - 1,
+    rows - 1,
+  );
+  geometry.rotateX(-Math.PI / 2);
+
+  const position = geometry.attributes['position'] as THREE.BufferAttribute;
+  const vertCount = rows * cols;
+  // After rotateX, PlaneGeometry vertex order is row-major top→bottom in local Y.
+  // Local Y becomes world -Z after the rotation, so row 0 is at minimum world Z.
+  for (let i = 0; i < vertCount; i++) {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    position.setY(i, elevation[r * cols + c]);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+
+  mesh.geometry.dispose();
+  mesh.geometry = geometry;
+  mesh.position.set(originX + (cols * resolution) / 2, 0, originY + (rows * resolution) / 2);
 }
 
-function buildPlaneGeometry(worldWidth: number, worldHeight: number): THREE.PlaneGeometry {
+/**
+ * Apply a world-sized flat plane to the mesh (no-TERRAIN fallback).
+ * Preserves the pre-slice-102 visual: a single flat ground plane across the full world.
+ */
+export function applyFlatPlane(mesh: THREE.Mesh, worldWidth: number, worldHeight: number): void {
   const geometry = new THREE.PlaneGeometry(worldWidth, worldHeight);
   geometry.rotateX(-Math.PI / 2);
-  return geometry;
+  geometry.computeVertexNormals();
+  mesh.geometry.dispose();
+  mesh.geometry = geometry;
+  mesh.position.set(worldWidth / 2, 0, worldHeight / 2);
 }
