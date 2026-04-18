@@ -7,8 +7,8 @@
  * reason about.
  */
 
-import { createInitialViewerState, type ViewerState } from './types';
-import type { ParsedSnapshot, ParsedStateUpdate } from './protocol/types';
+import { createInitialViewerState, type TerrainGrid, type ViewerState } from './types';
+import type { ParsedSnapshot, ParsedStateUpdate, ParsedTerrain } from './protocol/types';
 
 export const viewerState: ViewerState = createInitialViewerState();
 
@@ -21,6 +21,20 @@ export function applySnapshot(state: ViewerState, parsed: ParsedSnapshot): void 
   state.velocities = parsed.velocities;
   state.profileIndices = parsed.profileIndices;
   state.currentTick = parsed.tick;
+}
+
+/** Apply a TERRAIN message: store the elevation grid and increment the revision counter. */
+export function applyTerrain(state: ViewerState, parsed: ParsedTerrain): void {
+  const grid: TerrainGrid = {
+    rows: parsed.rows,
+    cols: parsed.cols,
+    resolution: parsed.resolution,
+    originX: parsed.originX,
+    originY: parsed.originY,
+    elevation: parsed.elevation,
+  };
+  state.terrain = grid;
+  state.terrainRevision += 1;
 }
 
 /**
