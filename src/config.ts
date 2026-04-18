@@ -69,8 +69,10 @@ const config: ViewerConfig = {
 
   profileColors: [0x5dcaa5, 0xf09595, 0x7ab8f5, 0xe8c36a, 0xc490e4],
 
-  groundColor: 0x2a3a2a,
-  backgroundColor: 0x1a1a1a,
+  /** a saved ground color */
+  /** 0x1a2a1a */ 
+  groundColor: 0x0a1a0a,
+  backgroundColor: 0x0a0a0a,
 
   hemisphereSkyColor: 0x87ceeb,
   hemisphereGroundColor: 0x444444,

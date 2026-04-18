@@ -8,7 +8,7 @@ initiative: 100
 initiativeName: viewer-foundation
 source: user/project-guides/001-initiative-plan.migratory-viewer.md
 dateCreated: 20260405
-dateUpdated: 20260408
+dateUpdated: 20260418
 status: in_progress
 archIndex: 100
 component: viewer-foundation
@@ -88,11 +88,11 @@ The WebGPU path also unlocks compute shaders for future performance work (slice 
 
 **Recovery behavior:** On any validation failure, log a warning with the failure reason and raw byte context, then discard the frame. Do not disconnect — a single corrupted frame on an otherwise healthy connection is not worth a full reconnect cycle. If multiple consecutive frames fail validation, the connection is likely broken; the existing reconnect logic (connection close event) will handle it.
 
-### Flat Ground Plane Until Protocol Extension
+### Terrain via TERRAIN (0x03)
 
-**Decision:** Render a flat ground plane for terrain until the wire protocol is extended to carry terrain data.
+**Decision:** Render terrain from the server's TERRAIN (0x03) message (migratory slice 507). A flat ground plane is the fallback for connections where the server does not send TERRAIN.
 
-**Rationale:** The server has real terrain data (slice 501 complete) that agents respond to, but the wire protocol (306) only carries entity state. The correct path is extending the protocol to send terrain — not replicating terrain generation in JavaScript. A flat plane is honest about what data the viewer actually has. Agents may appear to slow down or divert for no visible reason (they're responding to server-side elevation), which is a known visual artifact of this gap.
+**Rationale:** Migratory slice 507 defines a TERRAIN message sent once per connection (after SNAPSHOT, before STATE_UPDATE) carrying a row-major `float64` elevation grid plus `rows`, `cols`, `resolution`, `origin_x`, `origin_y`. The viewer builds a displaced `PlaneGeometry` from this data and exposes a `getTerrainHeight(x, z)` lookup for entity placement. Clients MUST tolerate connections that never send TERRAIN — the viewer stays on the flat plane and renders entities at `y = 0`, which matches server configurations without a terrain layer. Biome coloring is deferred to a separate slice pending its own protocol extension.
 
 ### TypeScript
 
@@ -222,9 +222,11 @@ Reconnection uses exponential backoff with jitter. On reconnect, the server send
 | 305 — WebSocket Client Layer | Complete | Connection endpoint |
 | 306 — State Serialization and Protocol | Complete | Wire format definition |
 | 307 — Simulation Logging and Replay | Complete | Future: replay mode data source |
-| 501 — Terrain Layer | Complete | Terrain exists but not on wire yet |
+| 501 — Terrain Layer | Complete | Consumed by viewer slice 102 |
+| 507 — TERRAIN Wire Format | Complete | Defines 0x03 message; consumed by viewer slice 102 |
+| 502 — Biome Layer | Not started | Gates viewer slice 109 (biome rendering) |
 
-The viewer can begin immediately — all required server infrastructure is operational. Terrain rendering depends on a future protocol extension to carry environment data (reserved message types 0x03–0x0F).
+The viewer can begin immediately — all required server infrastructure is operational. Terrain rendering (slice 102) consumes TERRAIN (0x03) from migratory slice 507. Further environment layers (biome, resource, threat, trail) use additional message types in the 0x03–0x0F reserved range and are gated on their respective server-side slices.
 
 ### Third-Party
 
@@ -246,17 +248,19 @@ Performance profiling and optimization is its own slice (106) in the slice plan.
 
 ## Relationship to Slice Plan
 
-The slice plan (`100-slices.viewer-foundation.md`) is already complete and decomposes this architecture into 8 slices:
+The slice plan (`100-slices.viewer-foundation.md`) decomposes this architecture into the following slices:
 
 | Slice | Scope | Architecture Component |
 |---|---|---|
 | 100 — Scaffold + Rendering Core | Vite project, Three.js scene, static test instances | Scene setup, entity rendering skeleton |
 | 101 — WebSocket Consumer | Binary protocol parsing, live entity rendering | Protocol, connection, entity update pipeline |
-| 102 — Terrain + Biome Rendering | Displaced PlaneGeometry, flat plane until wire carries terrain | Terrain rendering |
-| 103 — Environment Overlays | Resource points, threat zones, trails | Overlay rendering (stubbed until data available) |
+| 102 — Terrain Rendering | Displaced PlaneGeometry driven by TERRAIN (0x03); flat-plane fallback when absent | Terrain rendering |
+| 103 — Environment Overlays | Resource points, threat zones, trails | Overlay rendering (gated on further protocol extensions) |
 | 104 — Camera Modes | Ortho/perspective toggle, orbit, follow-cam, minimap | Camera system |
 | 105 — HUD + Status Panel | Connection status, counters, legend | UI layer |
 | 106 — Performance Profiling | Bottleneck identification, optimization at scale | Performance targets |
 | 107 — Build + Deployment | Production build, static hosting, README | Build and deploy |
+| 108 — Camera Constraints + Pan | World-fit clamp and drag-pan for the orthographic camera | Camera system (prerequisite subset of 104) |
+| 109 — Biome Rendering | Biome-id coloring atop terrain | Biome rendering (gated on migratory slice 502 + its wire extension) |
 
 The slice plan's implementation order, dependencies, and success criteria remain authoritative. This architecture document provides the structural rationale and component design that the slice plan implements.
