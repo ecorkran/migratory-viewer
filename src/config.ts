@@ -35,6 +35,12 @@ export interface ViewerConfig {
   directionalIntensity: number;
   directionalPosition: [number, number, number];
 
+  /** Maximum number of terrain cells accepted from the wire protocol (rows × cols cap). */
+  terrainMaxCells: number;
+
+  /** Vertical offset for entity placement as a fraction of cone height (keeps cones above surface). */
+  entityVerticalOffsetRatio: number;
+
   /** Camera zoom limits. */
   zoomMin: number;
   zoomMax: number;
@@ -62,6 +68,9 @@ const config: ViewerConfig = {
 
   defaultEntityCount: 500,
   maxEntityCount: 200_000,
+
+  terrainMaxCells: 4_000_000,
+  entityVerticalOffsetRatio: 0.5,
 
   coneRadiusRatio: 0.003,
   coneHeightRatio: 0.012,
