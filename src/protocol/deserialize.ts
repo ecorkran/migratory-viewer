@@ -14,6 +14,7 @@ import {
   type ParsedMessage,
   type ParsedSnapshot,
   type ParsedStateUpdate,
+  type ParsedTerrain,
 } from './types';
 
 function readU8(view: DataView, offset: number): number {
@@ -28,6 +29,8 @@ function readF64LE(view: DataView, offset: number): number {
   return view.getFloat64(offset, true);
 }
 
+const TERRAIN_HEADER_BYTES = 33;
+const TERRAIN_BYTES_PER_CELL = 8;
 const SNAPSHOT_HEADER_BYTES = 25;
 const SNAPSHOT_PER_ENTITY_BYTES = 36; // 16 pos + 16 vel + 4 profile
 const STATE_UPDATE_HEADER_BYTES = 9;
@@ -47,6 +50,8 @@ export function parseMessage(buffer: ArrayBuffer): ParsedMessage | null {
   switch (type) {
     case MessageType.SNAPSHOT:
       return parseSnapshot(buffer, view);
+    case MessageType.TERRAIN:
+      return parseTerrain(buffer, view);
     case MessageType.STATE_UPDATE:
       return parseStateUpdate(buffer, view);
     default:
@@ -99,6 +104,52 @@ function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapshot | nu
     positions,
     velocities,
     profileIndices,
+  };
+}
+
+function parseTerrain(buffer: ArrayBuffer, view: DataView): ParsedTerrain | null {
+  if (buffer.byteLength < TERRAIN_HEADER_BYTES) {
+    console.warn(
+      `[protocol] terrain buffer too small for header: got ${buffer.byteLength}, need >= ${TERRAIN_HEADER_BYTES}`,
+    );
+    return null;
+  }
+  const rows = readU32LE(view, 1);
+  const cols = readU32LE(view, 5);
+  const resolution = readF64LE(view, 9);
+  const originX = readF64LE(view, 17);
+  const originY = readF64LE(view, 25);
+
+  if (rows === 0 || cols === 0 || resolution <= 0) {
+    console.warn(
+      `[protocol] terrain invalid header: rows=${rows} cols=${cols} resolution=${resolution}`,
+    );
+    return null;
+  }
+  if (rows * cols > config.terrainMaxCells) {
+    console.warn(
+      `[protocol] terrain grid ${rows}×${cols} exceeds cap ${config.terrainMaxCells}`,
+    );
+    return null;
+  }
+  const expectedBytes = TERRAIN_HEADER_BYTES + rows * cols * TERRAIN_BYTES_PER_CELL;
+  if (buffer.byteLength !== expectedBytes) {
+    console.warn(
+      `[protocol] terrain length mismatch: got ${buffer.byteLength}, expected ${expectedBytes} (rows=${rows} cols=${cols})`,
+    );
+    return null;
+  }
+
+  const elevation = new Float64Array(buffer.slice(TERRAIN_HEADER_BYTES, expectedBytes));
+
+  return {
+    type: MessageType.TERRAIN,
+    rows,
+    cols,
+    resolution,
+    originX,
+    originY,
+    elevation,
   };
 }
 
