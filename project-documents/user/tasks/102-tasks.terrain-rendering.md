@@ -278,19 +278,19 @@ Follow the verification walkthrough from the slice design (`102-slice.terrain-re
   - `pnpm test` all green (protocol, state, terrain, entities).
   - `pnpm build` succeeds.
 
-- [ ] **8.2 Topography renders with a terrain-enabled server** (requires live server)
+- [x] **8.2 Topography renders with a terrain-enabled server** (requires live server)
   - Start a migratory server configured with a terrain layer (e.g., `configs/terrain-default.yaml` or the default.yaml example from migratory slice 507).
   - Start the viewer: `pnpm dev`.
   - Devtools console: expect `[net] TERRAIN rows=… cols=… resolution=…`; no warnings.
   - In orthographic view: slope shading is visible (not a uniform single-tone plane).
 
-- [ ] **8.3 Perspective view shows topography** (requires live server)
+- [x] **8.3 Perspective view shows topography** (requires live server)
   - Press `V` (or click the HUD mode button) to switch to perspective. Elevation is visible. Double-click the canvas to reset framing; terrain persists.
 
-- [ ] **8.4 Entities sit on the surface** (requires live server)
+- [x] **8.4 Entities sit on the surface** (requires live server)
   - Zoom in near a slope. Cone bases are flush with the surface (not buried, not floating). Cones on hills are visibly higher than cones in valleys.
 
-- [ ] **8.5 No-terrain fallback (unchanged behavior from slice 101)** (requires live server)
+- [x] **8.5 No-terrain fallback (unchanged behavior from slice 101)** (requires live server)
   - Restart the server with a config that omits `environment.terrain:`.
   - Refresh the viewer. Expect a **world-sized flat plane** (same visual as before slice 102), no TERRAIN console log, no warnings. Entities render at `y ≈ verticalOffset` across the full world extent.
 
