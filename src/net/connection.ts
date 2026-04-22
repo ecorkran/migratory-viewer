@@ -55,7 +55,7 @@ export function createConnection(viewerState: ViewerState): Connection {
       console.warn('[net] non-ArrayBuffer message ignored');
       return;
     }
-    const parsed = parseMessage(event.data);
+const parsed = parseMessage(event.data);
     if (parsed === null) return;
     if (parsed.type === MessageType.SNAPSHOT) {
       applySnapshot(viewerState, parsed);
