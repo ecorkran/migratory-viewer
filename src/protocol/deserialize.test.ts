@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseMessage } from './deserialize';
 import { MessageType } from './types';
 
@@ -173,5 +173,115 @@ describe('parseStateUpdate', () => {
     if (snap === null || upd === null) throw new Error('parse failed');
     expect(snap.type).toBe(MessageType.SNAPSHOT);
     expect(upd.type).toBe(MessageType.STATE_UPDATE);
+  });
+});
+
+/**
+ * Build a TERRAIN (0x03) binary buffer.
+ * Header: u8 type | u32 rows | u32 cols | f64 resolution | f64 originX | f64 originY = 33 bytes
+ * Payload: rows*cols f64 elevation values (row-major).
+ */
+function buildTerrain(
+  rows: number,
+  cols: number,
+  resolution: number,
+  originX: number,
+  originY: number,
+  elevation: number[],
+): ArrayBuffer {
+  const headerBytes = 33;
+  const totalBytes = headerBytes + elevation.length * 8;
+  const buf = new ArrayBuffer(totalBytes);
+  const view = new DataView(buf);
+  view.setUint8(0, 0x03);
+  view.setUint32(1, rows, true);
+  view.setUint32(5, cols, true);
+  view.setFloat64(9, resolution, true);
+  view.setFloat64(17, originX, true);
+  view.setFloat64(25, originY, true);
+  let off = headerBytes;
+  for (const v of elevation) {
+    view.setFloat64(off, v, true);
+    off += 8;
+  }
+  return buf;
+}
+
+describe('parseTerrain', () => {
+  it('happy path: 2×3 grid round-trips correctly', () => {
+    const elev = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    const buf = buildTerrain(2, 3, 10.0, 100.0, 200.0, elev);
+    const result = parseMessage(buf);
+    expect(result).not.toBeNull();
+    if (result === null || result.type !== MessageType.TERRAIN) throw new Error('expected terrain');
+    expect(result.rows).toBe(2);
+    expect(result.cols).toBe(3);
+    expect(result.resolution).toBe(10.0);
+    expect(result.originX).toBe(100.0);
+    expect(result.originY).toBe(200.0);
+    expect(Array.from(result.elevation)).toEqual(elev);
+  });
+
+  it('truncated header (short by 1 byte) → null + warns', () => {
+    const buf = buildTerrain(2, 3, 10, 0, 0, [1, 2, 3, 4, 5, 6]);
+    const truncated = buf.slice(0, 32); // header is 33 bytes
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseMessage(truncated)).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('rows === 0 → null', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const buf = buildTerrain(0, 3, 10, 0, 0, []);
+    expect(parseMessage(buf)).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('cols === 0 → null', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const buf = buildTerrain(2, 0, 10, 0, 0, []);
+    expect(parseMessage(buf)).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('resolution === 0 → null', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const buf = buildTerrain(2, 3, 0, 0, 0, [1, 2, 3, 4, 5, 6]);
+    expect(parseMessage(buf)).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('resolution negative → null', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const buf = buildTerrain(2, 3, -1, 0, 0, [1, 2, 3, 4, 5, 6]);
+    expect(parseMessage(buf)).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('payload length mismatch → null', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Declare 2×3 but only provide 5 values
+    const buf = buildTerrain(2, 3, 10, 0, 0, [1, 2, 3, 4, 5]);
+    expect(parseMessage(buf)).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('rows*cols exceeds terrainMaxCells cap → null', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // 2001 × 2001 = 4,004,001 > 4,000,000 default cap
+    const rows = 2001;
+    const cols = 2001;
+    const buf = buildTerrain(rows, cols, 1, 0, 0, new Array(rows * cols).fill(0));
+    expect(parseMessage(buf)).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('dispatch: 0x03 byte routes through parseMessage → ParsedTerrain', () => {
+    const buf = buildTerrain(1, 1, 5.0, 0, 0, [42.0]);
+    const result = parseMessage(buf);
+    if (result === null || result.type !== MessageType.TERRAIN) throw new Error('expected terrain');
+    expect(result.type).toBe(MessageType.TERRAIN);
+    expect(result.elevation[0]).toBe(42.0);
   });
 });

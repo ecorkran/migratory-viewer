@@ -7,7 +7,7 @@ dependencies: [101-websocket-consumer-and-live-entity-rendering]
 interfaces: [103-environment-overlay-rendering, 109-biome-rendering]
 dateCreated: 20260418
 dateUpdated: 20260418
-status: not_started
+status: complete
 ---
 
 # Slice Design: Terrain Rendering

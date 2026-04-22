@@ -9,7 +9,7 @@
  */
 
 import type { ViewerState } from '../types';
-import { applySnapshot, applyStateUpdate } from '../state';
+import { applySnapshot, applyStateUpdate, applyTerrain } from '../state';
 import { parseMessage } from '../protocol/deserialize';
 import { MessageType } from '../protocol/types';
 
@@ -55,10 +55,15 @@ export function createConnection(viewerState: ViewerState): Connection {
       console.warn('[net] non-ArrayBuffer message ignored');
       return;
     }
-    const parsed = parseMessage(event.data);
+const parsed = parseMessage(event.data);
     if (parsed === null) return;
     if (parsed.type === MessageType.SNAPSHOT) {
       applySnapshot(viewerState, parsed);
+      return;
+    }
+    if (parsed.type === MessageType.TERRAIN) {
+      console.info(`[net] TERRAIN rows=${parsed.rows} cols=${parsed.cols} resolution=${parsed.resolution}`);
+      applyTerrain(viewerState, parsed);
       return;
     }
     // STATE_UPDATE
@@ -86,6 +91,9 @@ export function createConnection(viewerState: ViewerState): Connection {
     currentUrl = url;
     intentionallyClosed = false;
     viewerState.connectionStatus = 'connecting';
+    // The browser WebSocket API has no client-side max_size knob. The server's
+    // 32 MiB TERRAIN frame cap (migratory slice 507) is asymmetric by design;
+    // Node-based consumers would need to configure their own limit separately.
     ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
 

@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three/webgpu';
 import { createScene } from './rendering/scene.ts';
 import { createCameraRig, handleRigResize, resizeRigToWorld, updateRig } from './rendering/camera.ts';
-import { createTerrain, resizeTerrain } from './rendering/terrain.ts';
+import { createTerrainMesh, applyTerrainToMesh, applyFlatPlane } from './rendering/terrain.ts';
 import { createEntities, updateEntities, rebuildEntityGeometry } from './rendering/entities.ts';
 import { viewerState } from './state.ts';
 import { createConnection } from './net/connection.ts';
@@ -15,11 +15,12 @@ const { renderer, scene } = createScene(canvas);
 
 const rig = createCameraRig(config.worldWidth, config.worldHeight);
 initCameraInput(canvas, rig);
-const terrainMesh = createTerrain(scene, config.worldWidth, config.worldHeight);
+const terrainMesh = createTerrainMesh(scene);
 const entityMesh = createEntities(scene);
 
 let lastWorldWidth = config.worldWidth;
 let lastWorldHeight = config.worldHeight;
+let lastTerrainRevision = 0;
 
 window.addEventListener('resize', () => {
   handleRigResize(rig);
@@ -45,9 +46,16 @@ renderer.setAnimationLoop(() => {
   ) {
     lastWorldWidth = viewerState.worldWidth;
     lastWorldHeight = viewerState.worldHeight;
-    resizeTerrain(terrainMesh, lastWorldWidth, lastWorldHeight);
+    if (viewerState.terrain === null) {
+      applyFlatPlane(terrainMesh, lastWorldWidth, lastWorldHeight);
+    }
     resizeRigToWorld(rig, lastWorldWidth, lastWorldHeight);
     rebuildEntityGeometry(entityMesh, lastWorldWidth, lastWorldHeight);
+  }
+
+  if (viewerState.terrain !== null && viewerState.terrainRevision !== lastTerrainRevision) {
+    applyTerrainToMesh(terrainMesh, viewerState.terrain);
+    lastTerrainRevision = viewerState.terrainRevision;
   }
 
   updateRig(rig, delta);

@@ -153,6 +153,51 @@ describe('updateEntities', () => {
     expect(m.matrices[0].elements[15]).toBeCloseTo(expected);
   });
 
+  it('null terrain: entity y = verticalOffset (no terrain lookup)', () => {
+    const scene = new THREE.Scene();
+    const mesh = createEntities(scene);
+    const state = createInitialViewerState();
+    state.worldWidth = 1000;
+    state.worldHeight = 1000;
+    state.entityCount = 1;
+    state.positions = new Float64Array([100, 200]);
+    state.velocities = new Float64Array([1, 0]);
+    state.profileIndices = new Int32Array([0]);
+    state.terrain = null;
+    updateEntities(mesh, state);
+    const m = mesh as unknown as { matrices: { elements: number[] }[] };
+    const refSize = Math.min(state.worldWidth, state.worldHeight);
+    const coneHeight = refSize * 0.012; // config.coneHeightRatio
+    const expectedY = coneHeight * 0.5; // config.entityVerticalOffsetRatio
+    expect(m.matrices[0].elements[13]).toBeCloseTo(expectedY);
+  });
+
+  it('constant-elevation terrain: entity y = elevation + verticalOffset', () => {
+    const scene = new THREE.Scene();
+    const mesh = createEntities(scene);
+    const state = createInitialViewerState();
+    state.worldWidth = 1000;
+    state.worldHeight = 1000;
+    state.entityCount = 1;
+    state.positions = new Float64Array([5, 5]); // center of first cell
+    state.velocities = new Float64Array([1, 0]);
+    state.profileIndices = new Int32Array([0]);
+    state.terrain = {
+      rows: 1,
+      cols: 1,
+      resolution: 10,
+      originX: 0,
+      originY: 0,
+      elevation: new Float64Array([5.0]),
+    };
+    updateEntities(mesh, state);
+    const m = mesh as unknown as { matrices: { elements: number[] }[] };
+    const refSize = Math.min(state.worldWidth, state.worldHeight);
+    const coneHeight = refSize * 0.012;
+    const expectedY = 5.0 + coneHeight * 0.5;
+    expect(m.matrices[0].elements[13]).toBeCloseTo(expectedY);
+  });
+
   it('refreshes colors when entity count changes (snapshot), not on subsequent same-count calls', () => {
     const scene = new THREE.Scene();
     const mesh = createEntities(scene);

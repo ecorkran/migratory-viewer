@@ -1,6 +1,17 @@
 /** Connection states for the WebSocket lifecycle (used by slice 101). */
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
+/** Elevation grid received from the server via TERRAIN (0x03). Wire originY maps to world Z. */
+export interface TerrainGrid {
+  rows: number;
+  cols: number;
+  resolution: number;
+  originX: number;
+  /** Wire name; maps to world Z in Three.js scene space. */
+  originY: number;
+  elevation: Float64Array;
+}
+
 /** World bounds dimensions. */
 export interface WorldBounds {
   width: number;
@@ -28,6 +39,10 @@ export interface ViewerState {
   currentTick: number;
   /** Current connection state. */
   connectionStatus: ConnectionStatus;
+  /** Terrain elevation grid from the latest TERRAIN message, or null if none received. */
+  terrain: TerrainGrid | null;
+  /** Incremented each time a new TERRAIN message is applied; drives mesh rebuild in the render loop. */
+  terrainRevision: number;
 }
 
 /** Build a fresh `ViewerState` with all dynamic data cleared. */
@@ -41,5 +56,7 @@ export function createInitialViewerState(): ViewerState {
     velocities: null,
     currentTick: 0,
     connectionStatus: 'disconnected',
+    terrain: null,
+    terrainRevision: 0,
   };
 }
