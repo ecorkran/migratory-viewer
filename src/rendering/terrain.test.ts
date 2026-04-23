@@ -280,6 +280,7 @@ describe('createTerrainMaterial — updateBiome', () => {
       cliffMetalness: 0.05,
       slopeBlendLow: 0.55,
       slopeBlendHigh: 0.80,
+      textureScale: 0.05,
       ...overrides,
     };
   }

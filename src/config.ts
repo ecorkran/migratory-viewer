@@ -24,6 +24,16 @@ export interface BiomeConfig {
   slopeBlendLow: number;
   /** normalWorld.y ≥ this → full surface appearance. */
   slopeBlendHigh: number;
+  /** Triplanar tiling scale (larger = tighter tiling). Applies to both diffuse and normal maps. */
+  textureScale: number;
+  /** Root-relative URL for the flat-surface diffuse texture. Optional — omit for solid color. */
+  surfaceTexturePath?: string;
+  /** Root-relative URL for the cliff diffuse texture. Optional — omit for solid color. */
+  cliffTexturePath?: string;
+  /** Root-relative URL for the flat-surface normal map. Optional — requires cliffNormalPath to activate. */
+  surfaceNormalPath?: string;
+  /** Root-relative URL for the cliff normal map. Optional — requires surfaceNormalPath to activate. */
+  cliffNormalPath?: string;
 }
 
 /** Default alien vegetation biome matching the concept art reference. */
@@ -36,6 +46,11 @@ export const DEFAULT_BIOME: BiomeConfig = {
   cliffMetalness:   0.05,
   slopeBlendLow:    0.65,
   slopeBlendHigh:   0.90,
+  textureScale:     0.05,
+  surfaceTexturePath: '/textures/biomes/alien/surface-diffuse.jpg',
+  cliffTexturePath:   '/textures/biomes/alien/cliff-diffuse.jpg',
+  surfaceNormalPath:  '/textures/biomes/alien/surface-normal.jpg',
+  cliffNormalPath:    '/textures/biomes/alien/cliff-normal.jpg',
 };
 
 export interface ViewerConfig {
@@ -79,6 +94,9 @@ export interface ViewerConfig {
 
   /** Vertical offset for entity placement as a fraction of cone height (keeps cones above surface). */
   entityVerticalOffsetRatio: number;
+
+  /** Geological slab depth below terrain surface in world units. */
+  slabDepth: number;
 
   /** Camera zoom limits. */
   zoomMin: number;
@@ -127,6 +145,7 @@ const config: ViewerConfig = {
   ],
 
   biomeConfig: DEFAULT_BIOME,
+  slabDepth: 30,
   backgroundColor: 0x0a0a0a,
 
   hemisphereSkyColor: 0x1a1a4e,      // deep alien blue-purple sky
