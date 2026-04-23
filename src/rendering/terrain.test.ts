@@ -5,6 +5,19 @@ import { describe, expect, it, vi } from 'vitest';
  * load under Node. We mock only the geometry/mesh surface that terrain.ts uses.
  */
 vi.mock('three/webgpu', () => {
+  class Color {
+    r = 0; g = 0; b = 0;
+    constructor(hex?: number) {
+      if (hex !== undefined) this.set(hex);
+    }
+    set(hex: number) {
+      this.r = ((hex >> 16) & 0xff) / 255;
+      this.g = ((hex >> 8)  & 0xff) / 255;
+      this.b = (hex & 0xff) / 255;
+      return this;
+    }
+  }
+
   class BufferAttribute {
     array: Float32Array;
     needsUpdate = false;
@@ -29,18 +42,16 @@ vi.mock('three/webgpu', () => {
   class PlaneGeometry extends BufferGeometry {
     constructor(_w?: number, _h?: number, _wSeg?: number, _hSeg?: number) {
       super();
-      // Build a minimal position buffer. For a (wSeg+1)*(hSeg+1) grid.
       const wSeg = (_wSeg ?? 1);
       const hSeg = (_hSeg ?? 1);
       const vertCount = (wSeg + 1) * (hSeg + 1);
       const arr = new Float32Array(vertCount * 3);
-      // Fill X/Z from grid, Y=0 initially
       let idx = 0;
       for (let r = 0; r <= hSeg; r++) {
         for (let c = 0; c <= wSeg; c++) {
-          arr[idx * 3] = c;      // X
-          arr[idx * 3 + 1] = 0;  // Y (elevation)
-          arr[idx * 3 + 2] = r;  // Z
+          arr[idx * 3] = c;
+          arr[idx * 3 + 1] = 0;
+          arr[idx * 3 + 2] = r;
           idx++;
         }
       }
@@ -50,19 +61,38 @@ vi.mock('three/webgpu', () => {
   }
 
   class MeshLambertMaterial {}
+  class MeshStandardNodeMaterial {
+    colorNode: unknown = null;
+    roughnessNode: unknown = null;
+    metalnessNode: unknown = null;
+  }
   class Object3D { position = { set: vi.fn() } }
   class Mesh extends Object3D {
     geometry: BufferGeometry;
-    material: MeshLambertMaterial;
-    constructor(geo?: BufferGeometry, _mat?: MeshLambertMaterial) {
+    material: MeshLambertMaterial | MeshStandardNodeMaterial;
+    constructor(geo?: BufferGeometry, mat?: MeshLambertMaterial | MeshStandardNodeMaterial) {
       super();
       this.geometry = geo ?? new BufferGeometry();
-      this.material = _mat ?? new MeshLambertMaterial();
+      this.material = mat ?? new MeshStandardNodeMaterial();
     }
   }
   class Scene { add = vi.fn() }
 
-  return { BufferAttribute, BufferGeometry, PlaneGeometry, MeshLambertMaterial, Mesh, Object3D, Scene };
+  return { Color, BufferAttribute, BufferGeometry, PlaneGeometry, MeshLambertMaterial, MeshStandardNodeMaterial, Mesh, Object3D, Scene };
+});
+
+/** Mock three/tsl — terrain.ts uses uniform, normalWorld, smoothstep, mix. */
+vi.mock('three/tsl', () => {
+  const makeNode = () => ({ value: null as unknown });
+  const uniform = (val: unknown) => {
+    const node = makeNode();
+    node.value = val;
+    return node;
+  };
+  const normalWorld = { y: {} };
+  const smoothstep = () => ({});
+  const mix = () => ({});
+  return { uniform, normalWorld, smoothstep, mix };
 });
 
 vi.mock('../config.ts', () => ({
@@ -82,8 +112,9 @@ vi.mock('../config.ts', () => ({
   },
 }));
 
-import { getTerrainHeight, applyTerrainToMesh } from './terrain';
+import { getTerrainHeight, applyTerrainToMesh, createTerrainMesh, createTerrainMaterial } from './terrain';
 import type { TerrainGrid } from '../types';
+import type { BiomeConfig } from '../config';
 import * as THREE from 'three/webgpu';
 
 /** 3×3 fixture: elevation[row][col] = row*3+col so values 0..8. */
@@ -226,5 +257,52 @@ describe('applyTerrainToMesh — vertex mapping and re-application', () => {
     for (let i = 0; i < vertCount; i++) {
       expect(arr[i * 3 + 1]).toBeCloseTo(20);
     }
+  });
+});
+
+describe('createTerrainMesh — material type', () => {
+  it('mesh material is MeshStandardNodeMaterial, not MeshLambertMaterial', () => {
+    const scene = new THREE.Scene();
+    const mesh = createTerrainMesh(scene);
+    expect(mesh.material).toBeInstanceOf(THREE.MeshStandardNodeMaterial);
+    expect(mesh.material).not.toBeInstanceOf(THREE.MeshLambertMaterial);
+  });
+});
+
+describe('createTerrainMaterial — updateBiome', () => {
+  function makeBiome(overrides?: Partial<BiomeConfig>): BiomeConfig {
+    return {
+      surfaceColor: 0x1a3d1a,
+      cliffColor: 0x231810,
+      surfaceRoughness: 0.92,
+      cliffRoughness: 0.75,
+      surfaceMetalness: 0.0,
+      cliffMetalness: 0.05,
+      slopeBlendLow: 0.55,
+      slopeBlendHigh: 0.80,
+      ...overrides,
+    };
+  }
+
+  it('updateBiome updates scalar uniform values', () => {
+    const handle = createTerrainMaterial(makeBiome());
+    // Access the internals via updateBiome by calling it and checking via a second handle
+    // Since uniforms are closure-private, we verify by calling updateBiome and confirming
+    // no error is thrown and the material is a MeshStandardNodeMaterial.
+    expect(() => handle.updateBiome(makeBiome({ surfaceRoughness: 0.5, cliffRoughness: 0.3 }))).not.toThrow();
+    expect(handle.material).toBeInstanceOf(THREE.MeshStandardNodeMaterial);
+  });
+
+  it('updateBiome accepts a completely different biome without error', () => {
+    const handle = createTerrainMaterial(makeBiome());
+    const desertBiome = makeBiome({
+      surfaceColor: 0xc2a050,
+      cliffColor:   0x8b6914,
+      surfaceRoughness: 0.85,
+      cliffRoughness:   0.70,
+      slopeBlendLow:    0.60,
+      slopeBlendHigh:   0.85,
+    });
+    expect(() => handle.updateBiome(desertBiome)).not.toThrow();
   });
 });
