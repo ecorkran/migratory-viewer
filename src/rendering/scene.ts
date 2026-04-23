@@ -12,6 +12,9 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(config.backgroundColor);
+  if (import.meta.env.DEV) {
+    renderer.debug.checkShaderErrors = true;
+  }
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(config.backgroundColor);

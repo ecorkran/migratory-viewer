@@ -129,12 +129,12 @@ const config: ViewerConfig = {
   biomeConfig: DEFAULT_BIOME,
   backgroundColor: 0x0a0a0a,
 
-  hemisphereSkyColor: 0x87ceeb,
-  hemisphereGroundColor: 0x444444,
-  hemisphereIntensity: 1.5,
-  directionalColor: 0xffffff,
-  directionalIntensity: Math.PI,
-  directionalPosition: [300, 500, 200],
+  hemisphereSkyColor: 0x1a1a4e,      // deep alien blue-purple sky
+  hemisphereGroundColor: 0x0a1a0a,   // near-black green ground bounce
+  hemisphereIntensity: 1.1,
+  directionalColor: 0xfff5d0,        // warm amber-white key light
+  directionalIntensity: Math.PI * 1.5,
+  directionalPosition: [-400, 600, 150] as [number, number, number],
 
   zoomMin: 0.1,
   zoomMax: 10,
