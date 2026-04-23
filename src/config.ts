@@ -67,6 +67,9 @@ export interface ViewerConfig {
   modeTransitionSeconds: number;
 }
 
+/** Baseline cone height in world units. Population sizes are derived from this. */
+const BASE_CONE_SIZE = 4.8;
+
 const config: ViewerConfig = {
   serverUrl: import.meta.env.VITE_SERVER_URL as string || 'ws://localhost:8765',
 
@@ -83,13 +86,12 @@ const config: ViewerConfig = {
   coneHeightRatio: 0.012,
   coneSegments: 5,
 
-  // coneSize baseline: Math.min(800,400)*0.012 = 4.8 world units
   profileConfig: [
-    { color: 0x5dcaa5, coneSize: 4.8 },         // pop 0: baseline
-    { color: 0xf09595, coneSize: 4.8 * 0.70 },  // pop 1: 70%
-    { color: 0x7ab8f5, coneSize: 4.8 * 1.30 },  // pop 2: 130%
-    { color: 0xe8c36a, coneSize: 4.8 },
-    { color: 0xc490e4, coneSize: 4.8 },
+    { color: 0x5dcaa5, coneSize: BASE_CONE_SIZE },
+    { color: 0xf09595, coneSize: BASE_CONE_SIZE * 0.70 },  // 70%
+    { color: 0x7ab8f5, coneSize: BASE_CONE_SIZE * 1.30 },  // 130%
+    { color: 0xe8c36a, coneSize: BASE_CONE_SIZE },
+    { color: 0xc490e4, coneSize: BASE_CONE_SIZE },
   ],
 
   /** a saved ground color */
