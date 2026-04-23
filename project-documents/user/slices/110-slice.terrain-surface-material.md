@@ -7,7 +7,7 @@ dependencies: [102-terrain-rendering]
 interfaces: [111-terrain-slab-and-texture]
 dateCreated: 20260422
 dateUpdated: 20260422
-status: not_started
+status: complete
 ---
 
 # Slice Design: Terrain Surface Material
@@ -231,29 +231,29 @@ These are starting ranges. The implementer should tune visually against the conc
 
 ### Verification Walkthrough
 
-**Pre-flight:**
+**Pre-flight (verified passing):**
 ```bash
-pnpm tsc --noEmit   # expect: no errors
-pnpm test --run     # expect: all tests pass
-pnpm build          # expect: clean build
+pnpm tsc --noEmit   # no errors
+pnpm test --run     # 54 tests pass (51 existing + 3 new material tests)
+pnpm build          # clean build; chunk size warning is pre-existing, not introduced here
 ```
 
 **Visual verification (dev server):**
 1. `pnpm dev` — open the viewer in Chrome (WebGPU backend preferred)
 2. Connect to a world server that sends TERRAIN. The terrain should show two distinct colors: dark green on flat plateaus, dark rock-brown on cliffs and steep faces.
 3. The transition should be smooth, not a hard edge.
-4. Open browser console — confirm no shader compilation errors.
+4. Open browser console — `renderer.debug.checkShaderErrors = true` is active in dev mode; confirm no shader compilation errors logged.
 5. Compare against the concept art at `project-documents/user/reference/concept-art/migratory-terrain-concept.png`. The overall color palette and contrast should match.
 
 **Lighting check:**
-6. In perspective camera mode, rotate to view the terrain from a low angle. The directional light should create visible shadows and depth on the slopes. The sky hemisphere fill should be visibly blue-purple, not Earth-blue.
+6. In perspective camera mode, rotate to view the terrain from a low angle. The directional light (warm amber `0xfff5d0`, intensity `Math.PI * 1.5`, position `[-400, 600, 150]`) should create visible shadows and depth on the slopes. The sky hemisphere fill (`0x1a1a4e` deep blue-purple) should be visibly alien, not Earth-blue.
 
-**Biome update check (can be done via browser console):**
-7. In the browser console, import config and call `updateBiome` with a dramatically different biome (e.g., `surfaceColor: 0xff0000`) and confirm the terrain updates instantly with no reload.
-   (This is a developer-only smoke test — no UI for this in this slice.)
+**Biome update check (browser console):**
+7. `getTerrainMaterialHandle()` is exported from `src/rendering/terrain.ts`. In the browser console, access via the module and call `.updateBiome(...)` with a dramatically different biome (e.g., `surfaceColor: 0xff0000`) — terrain should update instantly with no reload.
+   (Developer-only smoke test — no UI for this in this slice.)
 
 **Flat-plane fallback:**
-8. Connect to a server that does not send TERRAIN. The flat ground plane should also use the biome material (solid surface color, no slope blending visible on a flat surface, which is correct).
+8. Connect to a server that does not send TERRAIN. The flat ground plane uses the same node material (solid `surfaceColor`, no visible slope variation on a flat surface — expected).
 
 ## Risk Assessment
 

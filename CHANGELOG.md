@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 20260422
+### Added
+- `BiomeConfig` interface in `config.ts` — PBR biome appearance parameters (surface/cliff colors, roughness, metalness, slope blend thresholds)
+- `DEFAULT_BIOME` constant: alien vegetation preset matching the concept art reference
+- `TerrainMaterialHandle` interface and `createTerrainMaterial(biome)` in `terrain.ts` — TSL slope-blend node graph on `MeshStandardNodeMaterial`; runtime biome switching via `updateBiome()` with no shader recompile
+- `getTerrainMaterialHandle()` export for developer console access to `updateBiome`
+- `renderer.debug.checkShaderErrors = true` in dev mode via `import.meta.env.DEV` guard
+
+### Changed
+- Terrain mesh material upgraded from `MeshLambertMaterial` to `MeshStandardNodeMaterial` with TSL slope-blend shader
+- Lighting upgraded to alien-world aesthetic: deep blue-purple hemisphere sky (`0x1a1a4e`), near-black green ground bounce (`0x0a1a0a`), warm amber key light (`0xfff5d0`, `Math.PI * 1.5` intensity) from upper-left angle
+- `groundColor` removed from `ViewerConfig`; surface color is now `biomeConfig.surfaceColor`
+
 ## [0.5.0] - 20260418
 ### Added
 - Terrain rendering from TERRAIN (0x03) wire message (migratory slice 507): displaced `PlaneGeometry` with bilinear-interpolated elevation grid
