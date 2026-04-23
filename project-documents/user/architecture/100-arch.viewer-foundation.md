@@ -8,7 +8,7 @@ initiative: 100
 initiativeName: viewer-foundation
 source: user/project-guides/001-initiative-plan.migratory-viewer.md
 dateCreated: 20260405
-dateUpdated: 20260418
+dateUpdated: 20260422
 status: in_progress
 archIndex: 100
 component: viewer-foundation
@@ -262,5 +262,7 @@ The slice plan (`100-slices.viewer-foundation.md`) decomposes this architecture 
 | 107 — Build + Deployment | Production build, static hosting, README | Build and deploy |
 | 108 — Camera Constraints + Pan | World-fit clamp and drag-pan for the orthographic camera | Camera system (prerequisite subset of 104) |
 | 109 — Biome Rendering | Biome-id coloring atop terrain | Biome rendering (gated on migratory slice 502 + its wire extension) |
+| 110 — Terrain Surface Material | TSL node material with slope-based surface/cliff blending; `BiomeConfig` in config.ts for swappable biome appearance; PBR lighting upgrade | Terrain rendering, material system |
+| 111 — Terrain Slab and Texture | Geological slab depth (side walls + bottom); texture maps on surface material via `BiomeConfig`; triplanar UV sampling in TSL | Terrain rendering, material system |
 
 The slice plan's implementation order, dependencies, and success criteria remain authoritative. This architecture document provides the structural rationale and component design that the slice plan implements.
