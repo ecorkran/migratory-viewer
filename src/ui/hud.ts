@@ -190,8 +190,8 @@ export function updateHud(hud: HudElements, state: ViewerState, delta: number, r
 
         const swatch = document.createElement('span');
         swatch.className = 'hud-color-swatch';
-        const color = profileIndex < config.profileColors.length
-          ? config.profileColors[profileIndex]
+        const color = profileIndex < config.profileConfig.length
+          ? config.profileConfig[profileIndex].color
           : 0x888888;
         swatch.style.backgroundColor = `#${color.toString(16).padStart(6, '0')}`;
 

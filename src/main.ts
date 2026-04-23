@@ -3,7 +3,7 @@ import * as THREE from 'three/webgpu';
 import { createScene } from './rendering/scene.ts';
 import { createCameraRig, handleRigResize, resizeRigToWorld, updateRig } from './rendering/camera.ts';
 import { createTerrainMesh, applyTerrainToMesh, applyFlatPlane } from './rendering/terrain.ts';
-import { createEntities, updateEntities, rebuildEntityGeometry } from './rendering/entities.ts';
+import { createEntities, updateEntities } from './rendering/entities.ts';
 import { viewerState } from './state.ts';
 import { createConnection } from './net/connection.ts';
 import { initCameraInput } from './input/camera-input.ts';
@@ -50,7 +50,6 @@ renderer.setAnimationLoop(() => {
       applyFlatPlane(terrainMesh, lastWorldWidth, lastWorldHeight);
     }
     resizeRigToWorld(rig, lastWorldWidth, lastWorldHeight);
-    rebuildEntityGeometry(entityMesh, lastWorldWidth, lastWorldHeight);
   }
 
   if (viewerState.terrain !== null && viewerState.terrainRevision !== lastTerrainRevision) {

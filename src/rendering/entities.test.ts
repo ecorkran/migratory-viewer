@@ -39,6 +39,7 @@ vi.mock('three/webgpu', () => {
   class Object3D {
     position = new Vector3();
     rotation = new Euler();
+    scale = new Vector3();
     matrix = new Matrix4();
     updateMatrix(): void {
       // Encode position+rotation into matrix elements for test inspection.
@@ -97,6 +98,7 @@ vi.mock('three/webgpu', () => {
 import * as THREE from 'three/webgpu';
 import { createEntities, updateEntities, __resetEntityRenderState } from './entities';
 import { createInitialViewerState } from '../types';
+import config from '../config';
 
 beforeEach(() => {
   __resetEntityRenderState();
@@ -131,9 +133,11 @@ describe('updateEntities', () => {
     updateEntities(mesh, state);
     expect(mesh.count).toBe(3);
     const m = mesh as unknown as { matrices: { elements: number[] }[] };
-    // Position mapping: server (x, y) → viewer (x, 0, z=y)
+    // Position mapping: server (x, y) → viewer (x, verticalOffset, z=y)
+    const pop0size = config.profileConfig[0].coneSize;
+    const expectedVerticalOffset = pop0size * config.entityVerticalOffsetRatio;
     expect(m.matrices[0].elements[12]).toBe(10); // x
-    expect(m.matrices[0].elements[13]).toBe(0); // y (always 0 in this slice)
+    expect(m.matrices[0].elements[13]).toBeCloseTo(expectedVerticalOffset); // y = verticalOffset (flat terrain)
     expect(m.matrices[0].elements[14]).toBe(20); // z = server y
     expect(m.matrices[2].elements[12]).toBe(50);
     expect(m.matrices[2].elements[14]).toBe(60);
@@ -157,8 +161,6 @@ describe('updateEntities', () => {
     const scene = new THREE.Scene();
     const mesh = createEntities(scene);
     const state = createInitialViewerState();
-    state.worldWidth = 1000;
-    state.worldHeight = 1000;
     state.entityCount = 1;
     state.positions = new Float64Array([100, 200]);
     state.velocities = new Float64Array([1, 0]);
@@ -166,9 +168,8 @@ describe('updateEntities', () => {
     state.terrain = null;
     updateEntities(mesh, state);
     const m = mesh as unknown as { matrices: { elements: number[] }[] };
-    const refSize = Math.min(state.worldWidth, state.worldHeight);
-    const coneHeight = refSize * 0.012; // config.coneHeightRatio
-    const expectedY = coneHeight * 0.5; // config.entityVerticalOffsetRatio
+    // pop 0 coneSize = 4.8, entityVerticalOffsetRatio = 0.5
+    const expectedY = config.profileConfig[0].coneSize * config.entityVerticalOffsetRatio;
     expect(m.matrices[0].elements[13]).toBeCloseTo(expectedY);
   });
 
@@ -176,8 +177,6 @@ describe('updateEntities', () => {
     const scene = new THREE.Scene();
     const mesh = createEntities(scene);
     const state = createInitialViewerState();
-    state.worldWidth = 1000;
-    state.worldHeight = 1000;
     state.entityCount = 1;
     state.positions = new Float64Array([5, 5]); // center of first cell
     state.velocities = new Float64Array([1, 0]);
@@ -192,9 +191,7 @@ describe('updateEntities', () => {
     };
     updateEntities(mesh, state);
     const m = mesh as unknown as { matrices: { elements: number[] }[] };
-    const refSize = Math.min(state.worldWidth, state.worldHeight);
-    const coneHeight = refSize * 0.012;
-    const expectedY = 5.0 + coneHeight * 0.5;
+    const expectedY = 5.0 + config.profileConfig[0].coneSize * config.entityVerticalOffsetRatio;
     expect(m.matrices[0].elements[13]).toBeCloseTo(expectedY);
   });
 

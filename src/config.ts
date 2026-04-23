@@ -1,3 +1,11 @@
+/** Per-population visual configuration. */
+export interface ProfileConfig {
+  /** Hex color. */
+  color: number;
+  /** Absolute cone height in world units. */
+  coneSize: number;
+}
+
 export interface ViewerConfig {
   /** WebSocket endpoint (used by slice 101). */
   serverUrl: string;
@@ -12,14 +20,13 @@ export interface ViewerConfig {
   /** Hard cap on entity count accepted from the wire protocol. Parser rejects messages above this. */
   maxEntityCount: number;
 
-  /** Cone geometry parameters. Radius/height are expressed as a fraction of world width
-   * so cones remain visible at any world scale. Recomputed whenever world bounds change. */
+  /** Cone shape parameters. Ratios define aspect; coneSize per profile sets absolute scale. */
   coneRadiusRatio: number;
   coneHeightRatio: number;
   coneSegments: number;
 
-  /** Hex color palette indexed by profile. */
-  profileColors: number[];
+  /** Per-population color and size configuration, indexed by profile. */
+  profileConfig: ProfileConfig[];
 
   /** Ground plane color (hex). */
   groundColor: number;
@@ -76,7 +83,14 @@ const config: ViewerConfig = {
   coneHeightRatio: 0.012,
   coneSegments: 5,
 
-  profileColors: [0x5dcaa5, 0xf09595, 0x7ab8f5, 0xe8c36a, 0xc490e4],
+  // coneSize baseline: Math.min(800,400)*0.012 = 4.8 world units
+  profileConfig: [
+    { color: 0x5dcaa5, coneSize: 4.8 },         // pop 0: baseline
+    { color: 0xf09595, coneSize: 4.8 * 0.70 },  // pop 1: 70%
+    { color: 0x7ab8f5, coneSize: 4.8 * 1.30 },  // pop 2: 130%
+    { color: 0xe8c36a, coneSize: 4.8 },
+    { color: 0xc490e4, coneSize: 4.8 },
+  ],
 
   /** a saved ground color */
   /** 0x1a2a1a */ 
