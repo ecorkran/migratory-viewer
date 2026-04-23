@@ -6,6 +6,38 @@ export interface ProfileConfig {
   coneSize: number;
 }
 
+/** PBR biome appearance — controls terrain slope-blend shader and slab material. */
+export interface BiomeConfig {
+  /** Hex color for near-flat terrain (vegetation, soil). */
+  surfaceColor: number;
+  /** Hex color for steep cliff faces (rock, bare earth). */
+  cliffColor: number;
+  /** PBR roughness for flat surface (0 = mirror, 1 = fully rough). */
+  surfaceRoughness: number;
+  /** PBR roughness for cliff faces. */
+  cliffRoughness: number;
+  /** PBR metalness for flat surface (0 = dielectric, 1 = metal). */
+  surfaceMetalness: number;
+  /** PBR metalness for cliff faces. */
+  cliffMetalness: number;
+  /** normalWorld.y ≤ this → full cliff appearance. */
+  slopeBlendLow: number;
+  /** normalWorld.y ≥ this → full surface appearance. */
+  slopeBlendHigh: number;
+}
+
+/** Default alien vegetation biome matching the concept art reference. */
+export const DEFAULT_BIOME: BiomeConfig = {
+  surfaceColor:     0x1a3d1a,
+  cliffColor:       0x231810,
+  surfaceRoughness: 0.92,
+  cliffRoughness:   0.75,
+  surfaceMetalness: 0.0,
+  cliffMetalness:   0.05,
+  slopeBlendLow:    0.55,
+  slopeBlendHigh:   0.80,
+};
+
 export interface ViewerConfig {
   /** WebSocket endpoint (used by slice 101). */
   serverUrl: string;
@@ -28,8 +60,8 @@ export interface ViewerConfig {
   /** Per-population color and size configuration, indexed by profile. */
   profileConfig: ProfileConfig[];
 
-  /** Ground plane color (hex). */
-  groundColor: number;
+  /** Biome appearance — drives terrain slope-blend shader and slab material. */
+  biomeConfig: BiomeConfig;
 
   /** Scene background color (hex). */
   backgroundColor: number;
@@ -94,9 +126,7 @@ const config: ViewerConfig = {
     { color: 0xc490e4, coneSize: BASE_CONE_SIZE },
   ],
 
-  /** a saved ground color */
-  /** 0x1a2a1a */ 
-  groundColor: 0x0a1a0a,
+  biomeConfig: DEFAULT_BIOME,
   backgroundColor: 0x0a0a0a,
 
   hemisphereSkyColor: 0x87ceeb,

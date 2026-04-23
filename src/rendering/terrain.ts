@@ -40,7 +40,7 @@ export function getTerrainHeight(grid: TerrainGrid | null, x: number, z: number)
 export function createTerrainMesh(scene: THREE.Scene): THREE.Mesh {
   const geometry = new THREE.PlaneGeometry(1, 1);
   geometry.rotateX(-Math.PI / 2);
-  const material = new THREE.MeshLambertMaterial({ color: config.groundColor });
+  const material = new THREE.MeshLambertMaterial({ color: config.biomeConfig.surfaceColor });
   const mesh = new THREE.Mesh(geometry, material);
   scene.add(mesh);
   return mesh;

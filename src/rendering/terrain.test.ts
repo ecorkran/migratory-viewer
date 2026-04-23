@@ -67,7 +67,16 @@ vi.mock('three/webgpu', () => {
 
 vi.mock('../config.ts', () => ({
   default: {
-    groundColor: 0x0a1a0a,
+    biomeConfig: {
+      surfaceColor: 0x1a3d1a,
+      cliffColor: 0x231810,
+      surfaceRoughness: 0.92,
+      cliffRoughness: 0.75,
+      surfaceMetalness: 0.0,
+      cliffMetalness: 0.05,
+      slopeBlendLow: 0.55,
+      slopeBlendHigh: 0.80,
+    },
     terrainMaxCells: 4_000_000,
     entityVerticalOffsetRatio: 0.5,
   },
