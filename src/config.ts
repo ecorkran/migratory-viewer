@@ -34,8 +34,8 @@ export const DEFAULT_BIOME: BiomeConfig = {
   cliffRoughness:   0.75,
   surfaceMetalness: 0.0,
   cliffMetalness:   0.05,
-  slopeBlendLow:    0.55,
-  slopeBlendHigh:   0.80,
+  slopeBlendLow:    0.65,
+  slopeBlendHigh:   0.90,
 };
 
 export interface ViewerConfig {
@@ -134,7 +134,7 @@ const config: ViewerConfig = {
   hemisphereIntensity: 1.1,
   directionalColor: 0xfff5d0,        // warm amber-white key light
   directionalIntensity: Math.PI * 1.5,
-  directionalPosition: [-400, 600, 150] as [number, number, number],
+  directionalPosition: [-400, 600, 600] as [number, number, number],
 
   zoomMin: 0.1,
   zoomMax: 10,
