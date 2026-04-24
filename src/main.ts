@@ -3,7 +3,6 @@ import * as THREE from 'three/webgpu';
 import { createScene } from './rendering/scene.ts';
 import { createCameraRig, handleRigResize, resizeRigToWorld, updateRig } from './rendering/camera.ts';
 import { createTerrainMesh, applyTerrainToMesh, applyFlatPlane } from './rendering/terrain.ts';
-import { createSlab } from './rendering/slab.ts';
 import { createEntities, updateEntities } from './rendering/entities.ts';
 import { viewerState } from './state.ts';
 import { createConnection } from './net/connection.ts';
@@ -17,7 +16,6 @@ const { renderer, scene } = createScene(canvas);
 const rig = createCameraRig(config.worldWidth, config.worldHeight);
 initCameraInput(canvas, rig);
 const terrainMesh = createTerrainMesh(scene);
-const slabHandle  = createSlab(scene, config.biomeConfig, config.slabDepth);
 const entityMesh  = createEntities(scene);
 
 let lastWorldWidth = config.worldWidth;
@@ -51,7 +49,6 @@ renderer.setAnimationLoop(() => {
     if (viewerState.terrain === null) {
       applyFlatPlane(terrainMesh, lastWorldWidth, lastWorldHeight);
     }
-    slabHandle.resize(lastWorldWidth, lastWorldHeight);
     resizeRigToWorld(rig, lastWorldWidth, lastWorldHeight);
   }
 

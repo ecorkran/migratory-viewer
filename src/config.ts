@@ -145,7 +145,7 @@ const config: ViewerConfig = {
   ],
 
   biomeConfig: DEFAULT_BIOME,
-  slabDepth: 30,
+  slabDepth: 100,
   backgroundColor: 0x0a0a0a,
 
   hemisphereSkyColor: 0x1a1a4e,      // deep alien blue-purple sky

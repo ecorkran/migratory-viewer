@@ -19,23 +19,29 @@ vi.mock('three/webgpu', () => {
   }
 
   class BufferAttribute {
-    array: Float32Array;
+    array: Float32Array | Uint32Array | Uint16Array;
+    itemSize: number;
     needsUpdate = false;
-    constructor(array: Float32Array, _itemSize: number) {
-      this.array = array;
+    constructor(array: Float32Array | Uint32Array | Uint16Array, itemSize: number) {
+      this.array   = array;
+      this.itemSize = itemSize;
     }
     setY(index: number, value: number) {
-      this.array[index * 3 + 1] = value;
+      (this.array as Float32Array)[index * 3 + 1] = value;
     }
   }
 
   class BufferGeometry {
     attributes: Record<string, BufferAttribute> = {};
+    index: BufferAttribute | null = null;
     _disposed = false;
     dispose() { this._disposed = true; }
     computeVertexNormals() {}
     setAttribute(name: string, attr: BufferAttribute) {
       this.attributes[name] = attr;
+    }
+    setIndex(attr: BufferAttribute) {
+      this.index = attr;
     }
   }
 
@@ -106,9 +112,11 @@ vi.mock('../config.ts', () => ({
       cliffMetalness: 0.05,
       slopeBlendLow: 0.55,
       slopeBlendHigh: 0.80,
+      textureScale: 0.05,
     },
     terrainMaxCells: 4_000_000,
     entityVerticalOffsetRatio: 0.5,
+    slabDepth: 30,
   },
 }));
 
@@ -256,6 +264,129 @@ describe('applyTerrainToMesh — vertex mapping and re-application', () => {
     const vertCount = 4; // 2×2
     for (let i = 0; i < vertCount; i++) {
       expect(arr[i * 3 + 1]).toBeCloseTo(20);
+    }
+  });
+});
+
+describe('applyTerrainToMesh — unified slab geometry', () => {
+  // Expected vertex counts for a rows×cols grid with the unified-mesh layout:
+  //   T = rows*cols  (top surface)
+  //   + 2*cols       (north wall: top edge + bottom edge)
+  //   + 2*cols       (south wall)
+  //   + 2*rows       (west wall)
+  //   + 2*rows       (east wall)
+  //   + 4            (bottom face corners)
+  function expectedVertCount(rows: number, cols: number): number {
+    return rows * cols + 4 * cols + 4 * rows + 4;
+  }
+
+  function expectedIndexCount(rows: number, cols: number): number {
+    const topQuads   = (cols - 1) * (rows - 1);
+    const wallQuads  = 2 * (cols - 1) + 2 * (rows - 1);
+    return (topQuads * 2 + wallQuads * 2 + 2) * 3;
+  }
+
+  it('unified geometry vertex count = rows*cols + 4*cols + 4*rows + 4', () => {
+    const grid: TerrainGrid = {
+      rows: 3,
+      cols: 3,
+      resolution: 10,
+      originX: 0,
+      originY: 0,
+      elevation: new Float64Array([0, 1, 2, 3, 4, 5, 6, 7, 8]),
+    };
+    const mesh = new THREE.Mesh();
+    applyTerrainToMesh(mesh, grid);
+    const pos = mesh.geometry.attributes['position'];
+    expect(pos.array.length).toBe(expectedVertCount(3, 3) * 3);
+  });
+
+  it('unified geometry index count matches top + walls + bottom triangulation', () => {
+    const grid: TerrainGrid = {
+      rows: 4,
+      cols: 5,
+      resolution: 10,
+      originX: 0,
+      originY: 0,
+      elevation: new Float64Array(20),
+    };
+    const mesh = new THREE.Mesh();
+    applyTerrainToMesh(mesh, grid);
+    const index = (mesh.geometry as unknown as { index: { array: ArrayLike<number> } | null }).index;
+    expect(index).not.toBeNull();
+    expect(index!.array.length).toBe(expectedIndexCount(4, 5));
+  });
+
+  it('north wall top vertices match row-0 elevation; south wall top matches row (rows-1)', () => {
+    const grid: TerrainGrid = {
+      rows: 3,
+      cols: 3,
+      resolution: 10,
+      originX: 0,
+      originY: 0,
+      // row 0 elevations = [5, 6, 7]; row 2 elevations = [10, 11, 12]
+      elevation: new Float64Array([5, 6, 7, 0, 0, 0, 10, 11, 12]),
+    };
+    const mesh = new THREE.Mesh();
+    applyTerrainToMesh(mesh, grid);
+    const pos = mesh.geometry.attributes['position'].array;
+
+    const T = 9;                  // rows*cols
+    const wallN_base = T;         // 9
+    const wallS_base = T + 2 * 3; // 15
+
+    // North wall top is at [wallN_base, wallN_base + cols) = [9, 12).
+    // Their Y values should match elevation[0..2].
+    expect(pos[wallN_base * 3 + 1]).toBeCloseTo(5);
+    expect(pos[(wallN_base + 1) * 3 + 1]).toBeCloseTo(6);
+    expect(pos[(wallN_base + 2) * 3 + 1]).toBeCloseTo(7);
+
+    // South wall top should match row 2 elevations.
+    expect(pos[wallS_base * 3 + 1]).toBeCloseTo(10);
+    expect(pos[(wallS_base + 1) * 3 + 1]).toBeCloseTo(11);
+    expect(pos[(wallS_base + 2) * 3 + 1]).toBeCloseTo(12);
+  });
+
+  it('bottom face corners sit at Y = min(elevation) - slabDepth', () => {
+    // Mock config slabDepth = 30, elevations with min = -5 → expected bottom Y = -35.
+    const grid: TerrainGrid = {
+      rows: 3,
+      cols: 3,
+      resolution: 10,
+      originX: 0,
+      originY: 0,
+      elevation: new Float64Array([10, 5, 3, 8, 2, 0, -5, -2, 1]),
+    };
+    const mesh = new THREE.Mesh();
+    applyTerrainToMesh(mesh, grid);
+    const pos = mesh.geometry.attributes['position'].array;
+
+    const T = 9;
+    const floorBase = T + 4 * 3 + 4 * 3; // 9 + 12 + 12 = 33
+    // 4 corners all at Y = -5 - 30 = -35.
+    for (let i = 0; i < 4; i++) {
+      expect(pos[(floorBase + i) * 3 + 1]).toBeCloseTo(-35);
+    }
+  });
+
+  it('wall bottom vertices also sit at bottomY', () => {
+    const grid: TerrainGrid = {
+      rows: 3,
+      cols: 3,
+      resolution: 10,
+      originX: 0,
+      originY: 0,
+      elevation: new Float64Array([1, 2, 3, 4, 5, 6, 7, 8, 9]), // min=1, bottomY=-29
+    };
+    const mesh = new THREE.Mesh();
+    applyTerrainToMesh(mesh, grid);
+    const pos = mesh.geometry.attributes['position'].array;
+
+    const T = 9;
+    const wallN_base = T;
+    // North wall bottom is at [wallN_base + cols, wallN_base + 2*cols) = [12, 15).
+    for (let i = 0; i < 3; i++) {
+      expect(pos[(wallN_base + 3 + i) * 3 + 1]).toBeCloseTo(-29);
     }
   });
 });
