@@ -83,72 +83,72 @@ The 4th argument is tiling scale (`Node<float>`, default `float(1)`), confirmed 
   - [x] Commit: `refactor(terrain): unify slab into terrain mesh as single closed geometry`
   - [x] **Success:** Commit created; `pnpm tsc --noEmit`, `pnpm test --run`, `pnpm build` all pass
 
-- [ ] **T8 — Checkpoint: visual verification of unified mesh + directional lighting** *(effort: 2)*
-  - [ ] Run `pnpm dev` and connect to a world server that sends TERRAIN
-  - [ ] Switch to perspective camera mode; orbit to a low angle looking at the terrain edge
-  - [ ] Confirm: terrain block is visible with dark cliff walls on all 4 sides tracing the terrain edge profile; no gaps at top edge (walls meet terrain surface seamlessly); bottom face is visible when viewed from below
-  - [ ] Orbit fully around the world to confirm all four walls render correctly (no missing faces, no inverted normals)
-  - [ ] Walls should read as *pure cliff appearance* via the slope-blend (dark brown, cliff color/roughness) — not green
-  - [ ] **Issue #1 gate:** rotate the scene so the sun is low and nearly parallel to one of the walls. The wall should show *visible* shading variation — one side lit, opposite side darker. If walls are uniformly shaded, **STOP** and investigate issue #1 (likely fix: set `directionalLight.target` to world center `(worldWidth/2, 0, worldHeight/2)` so the light aims at the slab, not world origin)
-  - [ ] **Success:** Walls render correctly on all sides; directional shading is visible on walls; if issue #1 manifested, it was resolved before proceeding
+- [x] **T8 — Checkpoint: visual verification of unified mesh + directional lighting** *(effort: 2)*
+  - [x] Run `pnpm dev` and connect to a world server that sends TERRAIN
+  - [x] Switch to perspective camera mode; orbit to a low angle looking at the terrain edge
+  - [x] Confirm: terrain block is visible with dark cliff walls on all 4 sides tracing the terrain edge profile; no gaps at top edge (walls meet terrain surface seamlessly); bottom face is visible when viewed from below
+  - [x] Orbit fully around the world to confirm all four walls render correctly (no missing faces, no inverted normals)
+  - [x] Walls should read as *pure cliff appearance* via the slope-blend (dark brown, cliff color/roughness) — not green
+  - [x] **Issue #1 gate:** rotate the scene so the sun is low and nearly parallel to one of the walls. The wall should show *visible* shading variation — one side lit, opposite side darker. If walls are uniformly shaded, **STOP** and investigate issue #1 (likely fix: set `directionalLight.target` to world center `(worldWidth/2, 0, worldHeight/2)` so the light aims at the slab, not world origin)
+  - [x] **Success:** Walls render correctly on all sides; directional shading is visible on walls; if issue #1 manifested, it was resolved before proceeding
 
-- [ ] **T9 — Place CC0 texture assets in `public/textures/biomes/alien/`** *(effort: 1)*
-  - [ ] Create directory `public/textures/biomes/alien/` if absent
-  - [ ] Source four CC0 textures from Poly Haven (surface diffuse, surface normal, cliff diffuse, cliff normal) at 2K resolution — see slice design's "CC0 texture sourcing" section for candidate names
-  - [ ] Save files with the exact names referenced in `DEFAULT_BIOME`: `surface-diffuse.jpg`, `surface-normal.jpg`, `cliff-diffuse.jpg`, `cliff-normal.jpg`
-  - [ ] Verify files are valid images by opening in a viewer
-  - [ ] **Success:** All four files exist at the expected paths; `pnpm dev` serves them at the root-relative URLs listed in `DEFAULT_BIOME`
+- [x] **T9 — Place CC0 texture assets in `public/textures/biomes/alien/`** *(effort: 1)*
+  - [x] Create directory `public/textures/biomes/alien/` if absent
+  - [x] Source four CC0 textures from Poly Haven (surface diffuse, surface normal, cliff diffuse, cliff normal) at 2K resolution — see slice design's "CC0 texture sourcing" section for candidate names
+  - [x] Save files with the exact names referenced in `DEFAULT_BIOME`: `surface-diffuse.jpg`, `surface-normal.jpg`, `cliff-diffuse.jpg`, `cliff-normal.jpg`
+  - [x] Verify files are valid images by opening in a viewer
+  - [x] **Success:** All four files exist at the expected paths; `pnpm dev` serves them at the root-relative URLs listed in `DEFAULT_BIOME`
 
-- [ ] **T10 — Extend `createTerrainMaterial()` with diffuse textures and tiling scale uniform** *(effort: 3)*
-  - [ ] In `src/rendering/terrain.ts`, import additional TSL nodes: `texture`, `triplanarTexture`, `uv`, `normalMap` from `three/tsl`; `TextureLoader` from `three` core
-  - [ ] Add a `uTextureScale = uniform(biome.textureScale)` node alongside the existing uniforms
-  - [ ] Branch `createTerrainMaterial` on `biome.surfaceTexturePath !== undefined`:
-    - [ ] **Textured path:** load `surfaceTexturePath` and `cliffTexturePath` via `TextureLoader`; pass the `THREE.Texture` handles to `triplanarTexture(texture(map), null, null, uTextureScale)`; compose `colorNode = mix(cliffDiffuse.mul(uCliffColor), surfaceDiffuse.mul(uSurfaceColor), blendFactor)` (color uniforms act as tints). Triplanar sampling handles walls correctly (uses world position).
-    - [ ] **Solid-color path:** identical to slice 110 — `colorNode = mix(uCliffColor, uSurfaceColor, blendFactor)` (no regression)
-  - [ ] Keep `roughnessNode` and `metalnessNode` unchanged from slice 110 (uniform mix) — textures for these are not in scope this slice
-  - [ ] **Success:** `pnpm tsc --noEmit` clean; `createTerrainMaterial` compiles both paths; `pnpm dev` renders textured terrain and textured walls with tiling visible; no console shader errors with `checkShaderErrors` active
+- [x] **T10 — Extend `createTerrainMaterial()` with diffuse textures and tiling scale uniform** *(effort: 3)*
+  - [x] In `src/rendering/terrain.ts`, import additional TSL nodes: `texture`, `triplanarTexture`, `uv`, `normalMap` from `three/tsl`; `TextureLoader` from `three` core
+  - [x] Add a `uTextureScale = uniform(biome.textureScale)` node alongside the existing uniforms
+  - [x] Branch `createTerrainMaterial` on `biome.surfaceTexturePath !== undefined`:
+    - [x] **Textured path:** load `surfaceTexturePath` and `cliffTexturePath` via `TextureLoader`; pass the `THREE.Texture` handles to `triplanarTexture(texture(map), null, null, uTextureScale)`; compose `colorNode = mix(cliffDiffuse.mul(uCliffColor), surfaceDiffuse.mul(uSurfaceColor), blendFactor)` (color uniforms act as tints). Triplanar sampling handles walls correctly (uses world position).
+    - [x] **Solid-color path:** identical to slice 110 — `colorNode = mix(uCliffColor, uSurfaceColor, blendFactor)` (no regression)
+  - [x] Keep `roughnessNode` and `metalnessNode` unchanged from slice 110 (uniform mix) — textures for these are not in scope this slice
+  - [x] **Success:** `pnpm tsc --noEmit` clean; `createTerrainMaterial` compiles both paths; `pnpm dev` renders textured terrain and textured walls with tiling visible; no console shader errors with `checkShaderErrors` active
 
-- [ ] **T11 — Tests: textured material node graph** *(effort: 2)*
-  - [ ] Extend `three/tsl` mock with `texture`, `triplanarTexture`, `uv`, `normalMap` stubs that return identifiable tagged objects
-  - [ ] Mock `TextureLoader.load` to return a placeholder `THREE.Texture`
-  - [ ] Test: `createTerrainMaterial` with a biome containing texture paths calls `triplanarTexture` exactly twice (surface + cliff) and passes `uTextureScale` as the 4th argument
-  - [ ] Test: `createTerrainMaterial` without texture paths does NOT call `triplanarTexture` (solid-color path unchanged)
-  - [ ] Test: existing slice 110 material tests still pass unchanged
-  - [ ] **Success:** `pnpm test --run` green; both texture-path and no-texture-path branches covered
+- [x] **T11 — Tests: textured material node graph** *(effort: 2)*
+  - [x] Extend `three/tsl` mock with `texture`, `triplanarTexture`, `uv`, `normalMap` stubs that return identifiable tagged objects
+  - [x] Mock `TextureLoader.load` to return a placeholder `THREE.Texture`
+  - [x] Test: `createTerrainMaterial` with a biome containing texture paths calls `triplanarTexture` exactly twice (surface + cliff) and passes `uTextureScale` as the 4th argument
+  - [x] Test: `createTerrainMaterial` without texture paths does NOT call `triplanarTexture` (solid-color path unchanged)
+  - [x] Test: existing slice 110 material tests still pass unchanged
+  - [x] **Success:** `pnpm test --run` green; both texture-path and no-texture-path branches covered
 
-- [ ] **T12 — Add non-triplanar normal maps to `createTerrainMaterial()`** *(effort: 2)*
-  - [ ] In the textured branch, additionally load `surfaceNormalPath` and `cliffNormalPath` when present
-  - [ ] Compose `surfaceNormal = normalMap(texture(surfaceNormalTexture, uv().mul(uTextureScale)))` and matching `cliffNormal`
-  - [ ] Set `material.normalNode = mix(cliffNormal, surfaceNormal, blendFactor)` only when both normal paths are present; otherwise leave `normalNode` unset (geometry normals)
-  - [ ] Handle partial presence gracefully: if only one of the two normal paths is defined, skip normal mapping entirely
-  - [ ] Note: wall UVs from T3b must run along-edge (u) and top-to-bottom (v) for normal maps to orient correctly; bottom face UVs span `[0,1]²`
-  - [ ] **Success:** `pnpm tsc --noEmit` clean; terrain and walls show visible surface relief under directional light in `pnpm dev`; no shader errors
+- [x] **T12 — Add non-triplanar normal maps to `createTerrainMaterial()`** *(effort: 2)*
+  - [x] In the textured branch, additionally load `surfaceNormalPath` and `cliffNormalPath` when present
+  - [x] Compose `surfaceNormal = normalMap(texture(surfaceNormalTexture, uv().mul(uTextureScale)))` and matching `cliffNormal`
+  - [x] Set `material.normalNode = mix(cliffNormal, surfaceNormal, blendFactor)` only when both normal paths are present; otherwise leave `normalNode` unset (geometry normals)
+  - [x] Handle partial presence gracefully: if only one of the two normal paths is defined, skip normal mapping entirely
+  - [x] Note: wall UVs from T3b must run along-edge (u) and top-to-bottom (v) for normal maps to orient correctly; bottom face UVs span `[0,1]²`
+  - [x] **Success:** `pnpm tsc --noEmit` clean; terrain and walls show visible surface relief under directional light in `pnpm dev`; no shader errors
 
-- [ ] **T13 — Tests: normal-map node graph** *(effort: 1)*
-  - [ ] Test: with both normal paths present, `normalMap` is called twice and `material.normalNode` is set
-  - [ ] Test: with normal paths absent, `material.normalNode` is not set
-  - [ ] Test: with only one normal path present, `normalNode` is not set (partial-presence fallback)
-  - [ ] **Success:** `pnpm test --run` green
+- [x] **T13 — Tests: normal-map node graph** *(effort: 1)*
+  - [x] Test: with both normal paths present, `normalMap` is called twice and `material.normalNode` is set
+  - [x] Test: with normal paths absent, `material.normalNode` is not set
+  - [x] Test: with only one normal path present, `normalNode` is not set (partial-presence fallback)
+  - [x] **Success:** `pnpm test --run` green
 
-- [ ] **T14 — Extend `TerrainMaterialHandle.updateBiome()` to handle texture-path changes** *(effort: 2)*
-  - [ ] Store the last-applied texture paths on the handle's closure
-  - [ ] In `updateBiome(b)`, compare each of the four texture paths against the stored previous values
-  - [ ] If any path changed (including added or removed), dispose the existing `material` and call the internal material-construction routine with the new biome; assign the result to the handle's `material` property
-  - [ ] If no texture paths changed, preserve slice 110 behavior: mutate uniform `.value` fields only (including `uTextureScale`)
-  - [ ] Document that consumers must re-read `handle.material` after calling `updateBiome()` (add a brief comment above the interface)
-  - [ ] Update `main.ts` call site to re-read `handle.material` and assign it to `mesh.material` after each `updateBiome` call (idempotent when unchanged)
-  - [ ] **Success:** `pnpm tsc --noEmit` clean; calling `updateBiome` with a new texture path in browser console swaps the terrain texture live
+- [x] **T14 — Extend `TerrainMaterialHandle.updateBiome()` to handle texture-path changes** *(effort: 2)*
+  - [x] Store the last-applied texture paths on the handle's closure
+  - [x] In `updateBiome(b)`, compare each of the four texture paths against the stored previous values
+  - [x] If any path changed (including added or removed), dispose the existing `material` and call the internal material-construction routine with the new biome; assign the result to the handle's `material` property
+  - [x] If no texture paths changed, preserve slice 110 behavior: mutate uniform `.value` fields only (including `uTextureScale`)
+  - [x] Document that consumers must re-read `handle.material` after calling `updateBiome()` (add a brief comment above the interface)
+  - [x] Update `main.ts` call site to re-read `handle.material` and assign it to `mesh.material` after each `updateBiome` call (idempotent when unchanged)
+  - [x] **Success:** `pnpm tsc --noEmit` clean; calling `updateBiome` with a new texture path in browser console swaps the terrain texture live
 
-- [ ] **T15 — Tests: texture-aware `updateBiome`** *(effort: 2)*
-  - [ ] Test: `updateBiome` with identical texture paths does not replace `handle.material` (reference equality preserved)
-  - [ ] Test: `updateBiome` with a changed `surfaceTexturePath` replaces `handle.material` (reference changes)
-  - [ ] Test: `updateBiome` with only a color change (no path change) mutates uniform values, does not replace material
-  - [ ] **Success:** `pnpm test --run` green
+- [x] **T15 — Tests: texture-aware `updateBiome`** *(effort: 2)*
+  - [x] Test: `updateBiome` with identical texture paths does not replace `handle.material` (reference equality preserved)
+  - [x] Test: `updateBiome` with a changed `surfaceTexturePath` replaces `handle.material` (reference changes)
+  - [x] Test: `updateBiome` with only a color change (no path change) mutates uniform values, does not replace material
+  - [x] **Success:** `pnpm test --run` green
 
-- [ ] **T16 — Commit terrain material texture support** *(effort: 1)*
-  - [ ] Stage `src/rendering/terrain.ts`, `src/rendering/terrain.test.ts`, and any touched call sites in `src/main.ts`
-  - [ ] Commit: `feat(terrain): add triplanar diffuse and normal maps to terrain material`
-  - [ ] **Success:** Commit created; `pnpm tsc --noEmit`, `pnpm test --run`, `pnpm build` all pass
+- [x] **T16 — Commit terrain material texture support** *(effort: 1)*
+  - [x] Stage `src/rendering/terrain.ts`, `src/rendering/terrain.test.ts`, and any touched call sites in `src/main.ts`
+  - [x] Commit: `feat(terrain): add triplanar diffuse and normal maps to terrain material`
+  - [x] **Success:** Commit created; `pnpm tsc --noEmit`, `pnpm test --run`, `pnpm build` all pass
 
 ### Removed (no separate slab material)
 
