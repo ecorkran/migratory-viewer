@@ -92,7 +92,21 @@ vi.mock('three/webgpu', () => {
       this.children.push(o);
     }
   }
-  return { Object3D, Color, ConeGeometry, MeshLambertMaterial, InstancedMesh, Scene };
+  class Texture {
+    colorSpace: unknown = null;
+    wrapS: unknown = null;
+    wrapT: unknown = null;
+  }
+  class TextureLoader {
+    load(_url: string): Texture { return new Texture(); }
+  }
+  const SRGBColorSpace = 'srgb';
+  const RepeatWrapping = 1000;
+
+  return {
+    Object3D, Color, ConeGeometry, MeshLambertMaterial, InstancedMesh, Scene,
+    Texture, TextureLoader, SRGBColorSpace, RepeatWrapping,
+  };
 });
 
 import * as THREE from 'three/webgpu';

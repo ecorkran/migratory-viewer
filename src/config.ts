@@ -47,10 +47,10 @@ export const DEFAULT_BIOME: BiomeConfig = {
   slopeBlendLow:    0.65,
   slopeBlendHigh:   0.90,
   textureScale:     0.05,
-  surfaceTexturePath: '/textures/biomes/alien/surface-diffuse.jpg',
-  cliffTexturePath:   '/textures/biomes/alien/cliff-diffuse.jpg',
-  surfaceNormalPath:  '/textures/biomes/alien/surface-normal.jpg',
-  cliffNormalPath:    '/textures/biomes/alien/cliff-normal.jpg',
+  surfaceTexturePath: '/textures/biomes/default/surface-diffuse.jpg',
+  cliffTexturePath:   '/textures/biomes/default/cliff-diffuse.jpg',
+  surfaceNormalPath:  '/textures/biomes/default/surface-normal.jpg',
+  cliffNormalPath:    '/textures/biomes/default/cliff-normal.jpg',
 };
 
 export interface ViewerConfig {

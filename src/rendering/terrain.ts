@@ -1,52 +1,168 @@
 import * as THREE from 'three/webgpu';
-import { uniform, normalWorld, smoothstep, mix } from 'three/tsl';
+import { uniform, normalWorld, smoothstep, mix, texture, triplanarTexture, uv, normalMap } from 'three/tsl';
 import config from '../config.ts';
 import type { BiomeConfig } from '../config.ts';
 import type { TerrainGrid } from '../types.ts';
 
-/** Handle returned by createTerrainMaterial — hides uniform internals. */
-export interface TerrainMaterialHandle {
-  material: THREE.MeshStandardNodeMaterial;
-  /** Update all biome uniforms in-place. No shader recompile. */
-  updateBiome: (biome: BiomeConfig) => void;
+/** Single shared loader — Three's TextureLoader is synchronous from the caller's POV (returns a Texture immediately; pixels stream in). */
+const textureLoader = new THREE.TextureLoader();
+
+function loadDiffuse(url: string): THREE.Texture {
+  const tex = textureLoader.load(url);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+/** Normal maps stay in linear color space — no SRGB conversion. */
+function loadNormal(url: string): THREE.Texture {
+  const tex = textureLoader.load(url);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
 }
 
 /**
- * Build a MeshStandardNodeMaterial with a TSL slope-blend node graph.
- * All BiomeConfig fields are backed by uniform() nodes — runtime-updatable
- * without shader recompile via updateBiome().
+ * Handle returned by createTerrainMaterial — hides uniform internals.
+ *
+ * Important: `material` may be *replaced* by `updateBiome()` when texture paths change
+ * (the node graph is structurally different when textures are added/removed/swapped).
+ * Consumers that hold a direct reference (e.g. `mesh.material = handle.material`) must
+ * re-read `handle.material` after calling `updateBiome()` — idempotent when unchanged.
  */
-export function createTerrainMaterial(biome: BiomeConfig): TerrainMaterialHandle {
-  const uSurfaceColor    = uniform(new THREE.Color(biome.surfaceColor));
-  const uCliffColor      = uniform(new THREE.Color(biome.cliffColor));
+export interface TerrainMaterialHandle {
+  material: THREE.MeshStandardNodeMaterial;
+  /** Update all biome uniforms in-place; rebuilds material if texture paths changed. */
+  updateBiome: (biome: BiomeConfig) => void;
+}
+
+/** Internal state captured per material build — uniforms and the path fingerprint. */
+interface MaterialBuild {
+  material: THREE.MeshStandardNodeMaterial;
+  uniforms: {
+    uSurfaceColor:     ReturnType<typeof uniform>;
+    uCliffColor:       ReturnType<typeof uniform>;
+    uSurfaceRoughness: ReturnType<typeof uniform>;
+    uCliffRoughness:   ReturnType<typeof uniform>;
+    uSurfaceMetalness: ReturnType<typeof uniform>;
+    uCliffMetalness:   ReturnType<typeof uniform>;
+    uSlopeBlendLow:    ReturnType<typeof uniform>;
+    uSlopeBlendHigh:   ReturnType<typeof uniform>;
+    uTextureScale:     ReturnType<typeof uniform>;
+  };
+}
+
+/** Compare two biomes' texture-path fields. True if any of the four paths differ. */
+function texturePathsChanged(a: BiomeConfig, b: BiomeConfig): boolean {
+  return a.surfaceTexturePath !== b.surfaceTexturePath
+      || a.cliffTexturePath   !== b.cliffTexturePath
+      || a.surfaceNormalPath  !== b.surfaceNormalPath
+      || a.cliffNormalPath    !== b.cliffNormalPath;
+}
+
+/** Build a fresh MeshStandardNodeMaterial from biome. Pure — no side effects on handle. */
+function buildMaterial(biome: BiomeConfig): MaterialBuild {
+  const uSurfaceColor     = uniform(new THREE.Color(biome.surfaceColor));
+  const uCliffColor       = uniform(new THREE.Color(biome.cliffColor));
   const uSurfaceRoughness = uniform(biome.surfaceRoughness);
-  const uCliffRoughness  = uniform(biome.cliffRoughness);
+  const uCliffRoughness   = uniform(biome.cliffRoughness);
   const uSurfaceMetalness = uniform(biome.surfaceMetalness);
-  const uCliffMetalness  = uniform(biome.cliffMetalness);
-  const uSlopeBlendLow   = uniform(biome.slopeBlendLow);
-  const uSlopeBlendHigh  = uniform(biome.slopeBlendHigh);
+  const uCliffMetalness   = uniform(biome.cliffMetalness);
+  const uSlopeBlendLow    = uniform(biome.slopeBlendLow);
+  const uSlopeBlendHigh   = uniform(biome.slopeBlendHigh);
+  const uTextureScale     = uniform(biome.textureScale);
 
   // normalWorld.y is 1.0 on horizontal, 0.0 on vertical cliff, -1.0 on downward-facing bottom.
   // Both walls (y≈0) and bottom (y=-1) fall below slopeBlendLow and render as pure cliff.
   const blendFactor = smoothstep(uSlopeBlendLow, uSlopeBlendHigh, normalWorld.y);
 
   const material = new THREE.MeshStandardNodeMaterial();
-  material.colorNode     = mix(uCliffColor,      uSurfaceColor,      blendFactor);
-  material.roughnessNode = mix(uCliffRoughness,  uSurfaceRoughness,  blendFactor);
-  material.metalnessNode = mix(uCliffMetalness,  uSurfaceMetalness,  blendFactor);
 
-  function updateBiome(b: BiomeConfig): void {
-    uSurfaceColor.value.set(b.surfaceColor);
-    uCliffColor.value.set(b.cliffColor);
-    uSurfaceRoughness.value = b.surfaceRoughness;
-    uCliffRoughness.value   = b.cliffRoughness;
-    uSurfaceMetalness.value = b.surfaceMetalness;
-    uCliffMetalness.value   = b.cliffMetalness;
-    uSlopeBlendLow.value    = b.slopeBlendLow;
-    uSlopeBlendHigh.value   = b.slopeBlendHigh;
+  // Diffuse: all-or-nothing across surface + cliff paths. Partial presence → solid fallback.
+  if (biome.surfaceTexturePath !== undefined && biome.cliffTexturePath !== undefined) {
+    const surfaceMap = loadDiffuse(biome.surfaceTexturePath);
+    const cliffMap   = loadDiffuse(biome.cliffTexturePath);
+
+    // triplanarTexture projects a single texture along world X/Y/Z. 4th arg is tiling scale.
+    const surfaceDiffuse = triplanarTexture(texture(surfaceMap), null, null, uTextureScale);
+    const cliffDiffuse   = triplanarTexture(texture(cliffMap),   null, null, uTextureScale);
+
+    // Color uniforms act as tints (multiply). Keeps the committed palette governing mood.
+    material.colorNode = mix(
+      cliffDiffuse.mul(uCliffColor),
+      surfaceDiffuse.mul(uSurfaceColor),
+      blendFactor,
+    );
+  } else {
+    material.colorNode = mix(uCliffColor, uSurfaceColor, blendFactor);
   }
 
-  return { material, updateBiome };
+  material.roughnessNode = mix(uCliffRoughness, uSurfaceRoughness, blendFactor);
+  material.metalnessNode = mix(uCliffMetalness, uSurfaceMetalness, blendFactor);
+
+  // Normal maps: non-triplanar. Blend samples first, then wrap once — avoids NormalMapNode
+  // vec3 typing mismatch in mix() and produces one coherent tangent-space normal.
+  if (biome.surfaceNormalPath !== undefined && biome.cliffNormalPath !== undefined) {
+    const surfaceNormalTex = loadNormal(biome.surfaceNormalPath);
+    const cliffNormalTex   = loadNormal(biome.cliffNormalPath);
+
+    const surfaceSample = texture(surfaceNormalTex, uv().mul(uTextureScale));
+    const cliffSample   = texture(cliffNormalTex,   uv().mul(uTextureScale));
+    material.normalNode = normalMap(mix(cliffSample, surfaceSample, blendFactor));
+  }
+
+  return {
+    material,
+    uniforms: {
+      uSurfaceColor, uCliffColor,
+      uSurfaceRoughness, uCliffRoughness,
+      uSurfaceMetalness, uCliffMetalness,
+      uSlopeBlendLow, uSlopeBlendHigh,
+      uTextureScale,
+    },
+  };
+}
+
+/** Mutate all biome uniforms in-place (no shader recompile). */
+function applyUniformBiome(u: MaterialBuild['uniforms'], b: BiomeConfig): void {
+  (u.uSurfaceColor.value as THREE.Color).set(b.surfaceColor);
+  (u.uCliffColor.value   as THREE.Color).set(b.cliffColor);
+  u.uSurfaceRoughness.value = b.surfaceRoughness;
+  u.uCliffRoughness.value   = b.cliffRoughness;
+  u.uSurfaceMetalness.value = b.surfaceMetalness;
+  u.uCliffMetalness.value   = b.cliffMetalness;
+  u.uSlopeBlendLow.value    = b.slopeBlendLow;
+  u.uSlopeBlendHigh.value   = b.slopeBlendHigh;
+  u.uTextureScale.value     = b.textureScale;
+}
+
+/**
+ * Build a MeshStandardNodeMaterial with a TSL slope-blend node graph.
+ * All BiomeConfig fields are backed by uniform() nodes — runtime-updatable
+ * without shader recompile via updateBiome() as long as texture paths stay the same.
+ * Changing a texture path triggers a material rebuild.
+ */
+export function createTerrainMaterial(biome: BiomeConfig): TerrainMaterialHandle {
+  let build       = buildMaterial(biome);
+  let lastBiome   = biome;
+
+  const handle: TerrainMaterialHandle = {
+    material: build.material,
+    updateBiome(b: BiomeConfig): void {
+      if (texturePathsChanged(lastBiome, b)) {
+        // Structural change — dispose the old material and rebuild.
+        build.material.dispose();
+        build = buildMaterial(b);
+        handle.material = build.material;
+      } else {
+        // Uniform-only update — no shader recompile.
+        applyUniformBiome(build.uniforms, b);
+      }
+      lastBiome = b;
+    },
+  };
+  return handle;
 }
 
 // Module-level handle so callers can call updateBiome after mesh creation.

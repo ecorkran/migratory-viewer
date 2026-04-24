@@ -71,6 +71,9 @@ vi.mock('three/webgpu', () => {
     colorNode: unknown = null;
     roughnessNode: unknown = null;
     metalnessNode: unknown = null;
+    normalNode: unknown = null;
+    _disposed = false;
+    dispose() { this._disposed = true; }
   }
   class Object3D { position = { set: vi.fn() } }
   class Mesh extends Object3D {
@@ -84,12 +87,34 @@ vi.mock('three/webgpu', () => {
   }
   class Scene { add = vi.fn() }
 
-  return { Color, BufferAttribute, BufferGeometry, PlaneGeometry, MeshLambertMaterial, MeshStandardNodeMaterial, Mesh, Object3D, Scene };
+  class Texture {
+    colorSpace: unknown = null;
+    wrapS: unknown = null;
+    wrapT: unknown = null;
+    _sourceUrl: string | null = null;
+  }
+
+  class TextureLoader {
+    load(url: string): Texture {
+      const t = new Texture();
+      t._sourceUrl = url;
+      return t;
+    }
+  }
+
+  const SRGBColorSpace   = 'srgb';
+  const RepeatWrapping   = 1000;
+
+  return {
+    Color, BufferAttribute, BufferGeometry, PlaneGeometry,
+    MeshLambertMaterial, MeshStandardNodeMaterial, Mesh, Object3D, Scene,
+    Texture, TextureLoader, SRGBColorSpace, RepeatWrapping,
+  };
 });
 
-/** Mock three/tsl — terrain.ts uses uniform, normalWorld, smoothstep, mix. */
+/** Mock three/tsl — terrain.ts uses uniform, normalWorld, smoothstep, mix, texture, triplanarTexture. */
 vi.mock('three/tsl', () => {
-  const makeNode = () => ({ value: null as unknown });
+  const makeNode = () => ({ value: null as unknown, mul: (_other: unknown) => makeNode() });
   const uniform = (val: unknown) => {
     const node = makeNode();
     node.value = val;
@@ -98,7 +123,14 @@ vi.mock('three/tsl', () => {
   const normalWorld = { y: {} };
   const smoothstep = () => ({});
   const mix = () => ({});
-  return { uniform, normalWorld, smoothstep, mix };
+  // Spies for assertions in T11/T13 tests.
+  const texture         = vi.fn((tex: unknown, _uvNode?: unknown) => ({ __kind: 'texture', source: tex, mul: (_o: unknown) => makeNode() }));
+  const triplanarTexture = vi.fn((texNode: unknown, _y: unknown, _z: unknown, scaleNode: unknown) =>
+    ({ __kind: 'triplanar', texNode, scaleNode, mul: (_o: unknown) => makeNode() }),
+  );
+  const uv        = vi.fn(() => ({ __kind: 'uv', mul: (_o: unknown) => makeNode() }));
+  const normalMap = vi.fn((tex: unknown) => ({ __kind: 'normalMap', source: tex }));
+  return { uniform, normalWorld, smoothstep, mix, texture, triplanarTexture, uv, normalMap };
 });
 
 vi.mock('../config.ts', () => ({
@@ -436,5 +468,219 @@ describe('createTerrainMaterial — updateBiome', () => {
       slopeBlendHigh:   0.85,
     });
     expect(() => handle.updateBiome(desertBiome)).not.toThrow();
+  });
+});
+
+describe('createTerrainMaterial — textured path', () => {
+  // Access the tsl spies via the mock module.
+  async function getTslSpies(): Promise<{
+    texture: ReturnType<typeof vi.fn>;
+    triplanarTexture: ReturnType<typeof vi.fn>;
+  }> {
+    const tsl = await import('three/tsl');
+    return {
+      texture:          tsl.texture          as unknown as ReturnType<typeof vi.fn>,
+      triplanarTexture: tsl.triplanarTexture as unknown as ReturnType<typeof vi.fn>,
+    };
+  }
+
+  function makeBiome(overrides?: Partial<BiomeConfig>): BiomeConfig {
+    return {
+      surfaceColor: 0x1a3d1a,
+      cliffColor: 0x231810,
+      surfaceRoughness: 0.92,
+      cliffRoughness: 0.75,
+      surfaceMetalness: 0.0,
+      cliffMetalness: 0.05,
+      slopeBlendLow: 0.55,
+      slopeBlendHigh: 0.80,
+      textureScale: 0.05,
+      ...overrides,
+    };
+  }
+
+  it('with diffuse texture paths: triplanarTexture called twice with uTextureScale as 4th arg', async () => {
+    const { triplanarTexture } = await getTslSpies();
+    triplanarTexture.mockClear();
+
+    createTerrainMaterial(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+    }));
+
+    expect(triplanarTexture).toHaveBeenCalledTimes(2);
+    // The 4th argument (index 3) should be a node whose .value equals biome.textureScale.
+    for (const call of triplanarTexture.mock.calls) {
+      const scaleNode = call[3] as { value: number };
+      expect(scaleNode).toBeDefined();
+      expect(scaleNode.value).toBeCloseTo(0.05);
+    }
+  });
+
+  it('without diffuse texture paths: triplanarTexture is not called (solid-color fallback)', async () => {
+    const { triplanarTexture } = await getTslSpies();
+    triplanarTexture.mockClear();
+
+    createTerrainMaterial(makeBiome()); // no texture paths
+
+    expect(triplanarTexture).not.toHaveBeenCalled();
+  });
+
+  it('partial presence (only surfaceTexturePath) falls back to solid-color', async () => {
+    const { triplanarTexture } = await getTslSpies();
+    triplanarTexture.mockClear();
+
+    createTerrainMaterial(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      // cliffTexturePath intentionally omitted
+    }));
+
+    expect(triplanarTexture).not.toHaveBeenCalled();
+  });
+
+  it('textured material is still a MeshStandardNodeMaterial with colorNode set', () => {
+    const handle = createTerrainMaterial(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+    }));
+    expect(handle.material).toBeInstanceOf(THREE.MeshStandardNodeMaterial);
+    expect(handle.material.colorNode).not.toBeNull();
+  });
+
+  it('with both normal paths: normalMap is called once and material.normalNode is set', async () => {
+    const tsl = await import('three/tsl');
+    const nm  = tsl.normalMap  as unknown as ReturnType<typeof vi.fn>;
+    nm.mockClear();
+
+    const handle = createTerrainMaterial(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+      surfaceNormalPath:  '/textures/surface-n.jpg',
+      cliffNormalPath:    '/textures/cliff-n.jpg',
+    }));
+
+    // We wrap the mixed sample with a single normalMap() — so exactly one call.
+    expect(nm).toHaveBeenCalledTimes(1);
+    expect((handle.material as unknown as { normalNode: unknown }).normalNode).not.toBeNull();
+  });
+
+  it('with no normal paths: normalMap is not called and material.normalNode stays null', async () => {
+    const tsl = await import('three/tsl');
+    const nm  = tsl.normalMap as unknown as ReturnType<typeof vi.fn>;
+    nm.mockClear();
+
+    const handle = createTerrainMaterial(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+    }));
+
+    expect(nm).not.toHaveBeenCalled();
+    expect((handle.material as unknown as { normalNode: unknown }).normalNode).toBeNull();
+  });
+
+  it('partial presence (only surface normal): normal mapping is skipped entirely', async () => {
+    const tsl = await import('three/tsl');
+    const nm  = tsl.normalMap as unknown as ReturnType<typeof vi.fn>;
+    nm.mockClear();
+
+    const handle = createTerrainMaterial(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+      surfaceNormalPath:  '/textures/surface-n.jpg',
+      // cliffNormalPath omitted
+    }));
+
+    expect(nm).not.toHaveBeenCalled();
+    expect((handle.material as unknown as { normalNode: unknown }).normalNode).toBeNull();
+  });
+});
+
+describe('createTerrainMaterial — texture-aware updateBiome', () => {
+  function makeBiome(overrides?: Partial<BiomeConfig>): BiomeConfig {
+    return {
+      surfaceColor: 0x1a3d1a,
+      cliffColor: 0x231810,
+      surfaceRoughness: 0.92,
+      cliffRoughness: 0.75,
+      surfaceMetalness: 0.0,
+      cliffMetalness: 0.05,
+      slopeBlendLow: 0.55,
+      slopeBlendHigh: 0.80,
+      textureScale: 0.05,
+      ...overrides,
+    };
+  }
+
+  it('updateBiome with identical texture paths preserves material reference', () => {
+    const biomeA = makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+    });
+    const handle = createTerrainMaterial(biomeA);
+    const matBefore = handle.material;
+
+    handle.updateBiome(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+      // Different color — should still be uniform-only update.
+      surfaceColor: 0x00ff00,
+    }));
+
+    expect(handle.material).toBe(matBefore);
+  });
+
+  it('updateBiome with changed surfaceTexturePath replaces material and disposes the old one', () => {
+    const biomeA = makeBiome({
+      surfaceTexturePath: '/textures/surface-a.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+    });
+    const handle = createTerrainMaterial(biomeA);
+    const matBefore = handle.material;
+
+    handle.updateBiome(makeBiome({
+      surfaceTexturePath: '/textures/surface-b.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+    }));
+
+    expect(handle.material).not.toBe(matBefore);
+    expect((matBefore as unknown as { _disposed: boolean })._disposed).toBe(true);
+  });
+
+  it('updateBiome with color-only change does not replace the material', () => {
+    const handle = createTerrainMaterial(makeBiome());
+    const matBefore = handle.material;
+
+    handle.updateBiome(makeBiome({ surfaceColor: 0xff0000, cliffColor: 0x00ff00 }));
+    expect(handle.material).toBe(matBefore);
+  });
+
+  it('updateBiome from no-textures to with-textures replaces material (structural change)', () => {
+    const handle = createTerrainMaterial(makeBiome()); // no paths
+    const matBefore = handle.material;
+
+    handle.updateBiome(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+    }));
+
+    expect(handle.material).not.toBe(matBefore);
+  });
+
+  it('updateBiome from with-normals to without-normals replaces material', () => {
+    const handle = createTerrainMaterial(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+      surfaceNormalPath:  '/textures/surface-n.jpg',
+      cliffNormalPath:    '/textures/cliff-n.jpg',
+    }));
+    const matBefore = handle.material;
+
+    handle.updateBiome(makeBiome({
+      surfaceTexturePath: '/textures/surface.jpg',
+      cliffTexturePath:   '/textures/cliff.jpg',
+      // normals removed
+    }));
+
+    expect(handle.material).not.toBe(matBefore);
   });
 });
