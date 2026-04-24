@@ -46,7 +46,7 @@ export const DEFAULT_BIOME: BiomeConfig = {
   cliffMetalness:   0.05,
   slopeBlendLow:    0.65,
   slopeBlendHigh:   0.90,
-  textureScale:     0.05,
+  textureScale:     5.00,
   surfaceTexturePath: '/textures/biomes/default/surface-diffuse.jpg',
   cliffTexturePath:   '/textures/biomes/default/cliff-diffuse.jpg',
   surfaceNormalPath:  '/textures/biomes/default/surface-normal.jpg',
