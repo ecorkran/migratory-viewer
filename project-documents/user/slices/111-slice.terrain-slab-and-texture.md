@@ -7,7 +7,7 @@ dependencies: [110-terrain-surface-material]
 interfaces: []
 dateCreated: 20260422
 dateUpdated: 20260423
-status: not_started
+status: in_progress
 ---
 
 # Slice Design: Terrain Slab and Texture
@@ -69,9 +69,9 @@ The committed `DEFAULT_BIOME` and lighting values are the starting point for sli
 **Related open issue:** [#1](https://github.com/ecorkran/migratory-viewer/issues/1) — weak directional lighting contrast at low camera angles. The slab walls will be the first near-vertical geometry in the scene and may expose or clarify this. If shading on the walls is uniform/flat, investigation of issue #1 becomes a blocker rather than deferred work.
 
 ### Interfaces Required
-- `terrain.ts` → `createTerrainMaterial`, `TerrainMaterialHandle`
+- `terrain.ts` → `createTerrainMaterial`, `TerrainMaterialHandle`, `applyTerrainToMesh`, `applyFlatPlane`
 - `config.ts` → `BiomeConfig`, `ViewerConfig`
-- `main.ts` → world-bounds change handler (slab resize trigger)
+- `main.ts` → TERRAIN revision handler (triggers mesh rebuild)
 
 ## Architecture
 
@@ -85,14 +85,11 @@ config.ts
 rendering/terrain.ts
   createTerrainMaterial(biome)     (extended: texture-aware node graph)
   TerrainMaterialHandle            (unchanged interface; internal impl changes)
-
-rendering/slab.ts                  (new file)
-  createSlab(scene, biome) → SlabHandle
-  SlabHandle { group, resize(w, h), updateBiome(biome) }
+  applyTerrainToMesh(mesh, grid)   (extended: builds a closed mesh = top surface + 4 walls + bottom)
+  applyFlatPlane(mesh, w, h)       (extended: same closed-mesh shape, flat top)
 
 main.ts
-  createSlab call on init
-  slab.resize() on world-bounds change
+  unchanged call sites; the single terrain mesh now includes the slab
 ```
 
 ### Data Flow
@@ -104,34 +101,52 @@ BiomeConfig (config.ts)
   │           → texture() nodes → triplanarTexture() → colorNode / normalNode
   │     NO  → uniform(color) nodes (slice 110 behavior, unchanged)
   │
-  └── slabDepth (ViewerConfig) + worldWidth + worldHeight
-        → createSlab(): 5 PlaneGeometry meshes in a Group
-        → slab material: solid cliffColor (or cliff texture if present)
+  └── slabDepth (ViewerConfig) + TerrainGrid (elevation + bounds)
+        → applyTerrainToMesh: single indexed BufferGeometry
+        → one mesh, one material (slope-blend handles walls/bottom via normalWorld.y ≈ 0)
 ```
 
-### Slab Geometry
+### Unified Slab+Terrain Geometry
 
-The slab is a `THREE.Group` containing five meshes, all added to the scene. It is rebuilt when world bounds change.
+The slab is **not a separate mesh**. The world is modeled as a single solid block — one `BufferGeometry` containing the terrain top surface plus 4 walls plus 1 bottom face, all sharing vertices at the seams. This is assigned to the existing terrain mesh (`createTerrainMesh` still returns the same `THREE.Mesh`), and uses the same `TerrainMaterialHandle` material.
+
+**Why one mesh instead of separate slab module:**
+
+- **Guaranteed gap-free seams.** Wall top vertices are *the same* vertices as the terrain edge — one position per world location, no floating-point drift risk.
+- **One draw call.** Six meshes (terrain + 5 slab faces) collapse to one.
+- **One material.** The existing slope-blend shader handles walls/bottom correctly without special-casing: walls have `normalWorld.y ≈ 0` and bottom has `normalWorld.y = -1`, both below `slopeBlendLow = 0.65`, so they render as pure cliff automatically.
+- **Conceptually honest.** "The world is a solid thing" matches the concept-art mental model better than "a terrain surface resting on top of a separate slab".
+
+**Geometry composition:**
 
 ```
-World in XZ: x ∈ [0, worldWidth], z ∈ [0, worldHeight]
-Terrain Y: varies (elevation-driven)
-Slab top: Y = 0 (constant; terrain surface rises above this)
-Slab bottom: Y = -slabDepth
+World in XZ: x ∈ [originX, originX + cols*resolution], z ∈ [originY, originY + rows*resolution]
+Terrain vertices: rows × cols grid, Y = elevation[r * cols + c]
+Wall top edge: shared with terrain edge vertices (no duplication)
+Wall bottom edge: new vertices at same XZ but Y = min(elevation) - slabDepth
+Bottom face: 4 corner vertices at Y = min(elevation) - slabDepth
 
-Slab north wall: PlaneGeometry(worldWidth, slabDepth)
-  Position: (worldWidth/2, -slabDepth/2, 0), facing +Z
-Slab south wall: PlaneGeometry(worldWidth, slabDepth)
-  Position: (worldWidth/2, -slabDepth/2, worldHeight), facing -Z
-Slab east wall:  PlaneGeometry(worldHeight, slabDepth)
-  Position: (worldWidth, -slabDepth/2, worldHeight/2), facing -X
-Slab west wall:  PlaneGeometry(worldHeight, slabDepth)
-  Position: (0, -slabDepth/2, worldHeight/2), facing +X
-Slab bottom:     PlaneGeometry(worldWidth, worldHeight)
-  Position: (worldWidth/2, -slabDepth, worldHeight/2), rotated flat
+Vertex count (approx, for rows × cols grid):
+  top surface:  rows × cols
+  wall bottoms: 2 * (rows + cols - 2)   ← shared between adjacent walls at corners
+  bottom face:  reuses 4 wall-bottom corners
+Total: rows*cols + 2*(rows + cols - 2)
 ```
 
-The slab top edge is at Y=0. The terrain surface mesh starts at approximately Y=0 and rises with elevation — this slight overhang is intentional and matches the concept art appearance (terrain appears to rest on top of the slab).
+**Triangulation:**
+
+- Top surface: standard `PlaneGeometry`-style row/col triangulation (unchanged from slice 110).
+- Walls: each edge is a strip of `(edge_length - 1)` quads, two triangles each. Top-edge vertices reuse terrain-edge vertex indices; bottom-edge vertices are new.
+- Bottom: two triangles spanning the 4 wall-bottom corner vertices.
+
+**`slabDepth` semantics:** depth below the *lowest* terrain point, not below `Y = 0`. The bottom face sits at `Y = min(elevation) - slabDepth`, guaranteeing the slab has a consistent visible thickness regardless of terrain elevation range.
+
+**Normal generation:** after building the index/position arrays, call `geometry.computeVertexNormals()`. This produces a smooth top (matching slice 110) but introduces a *problem* at the top-edge ring: those vertices are shared between the top surface (normal ≈ +Y) and the walls (normal in XZ plane), and `computeVertexNormals` averages them, yielding a bevelled edge. Two remedies:
+
+1. **Accept it.** The bevelled edge is ~one texel wide at world scale and may even look pleasant (like an eroded cliff lip).
+2. **Duplicate edge vertices.** Add a second copy of each edge vertex used only by the wall strip; compute normals; get hard edges. This increases vertex count modestly.
+
+**Decision for slice 111:** start with option 1 (accept the bevel). If the bevel reads as a soft halo that weakens the cliff/surface transition, switch to option 2 in a follow-up. No visible seam occurs in either case because positions are identical — only normals differ.
 
 ### Texture Strategy
 
@@ -206,19 +221,29 @@ This is simpler than introducing a separate `rebuildMaterial()` method and keeps
 
 Units: `textureScale` is a float multiplier on the local-position coordinates fed into the triplanar projection. Larger values = tighter tiling (more repetitions per world unit). Empirical tuning is expected during implementation; the default `0.05` in the BiomeConfig table below is a starting point, not a confirmed value.
 
-### Slab Material
+### Slab Material — unified with terrain material
 
-The slab walls and bottom use a simpler material — always cliff appearance, no slope blending:
+Walls and bottom share the terrain's slope-blend material. No separate slab material exists.
 
-- When `cliffTexturePath` is absent: `MeshStandardNodeMaterial` with solid `cliffColor`, `cliffRoughness`, `cliffMetalness` from `BiomeConfig` (uniform-backed, consistent with terrain material)
-- When `cliffTexturePath` is present: `texture(cliffMap)` applied via standard UV (slab walls are flat planes — triplanar is unnecessary for flat geometry)
+**How this works:** the slope-blend shader from slice 110 computes `blendFactor = smoothstep(slopeBlendLow, slopeBlendHigh, normalWorld.y)`. Wall normals lie in the XZ plane (`normalWorld.y ≈ 0`), and the bottom face faces down (`normalWorld.y = -1`). Both fall well below `slopeBlendLow = 0.65`, so `blendFactor = 0` and the shader outputs pure cliff appearance for those faces — exactly what we want.
 
-The slab material is created once per biome. It can be a shared material across all five slab meshes — they all use the same cliff appearance.
+**Triplanar diffuse on walls:** the `triplanarTexture` projection uses world position, so walls sample the cliff texture along whichever axis is dominant for that face. For a `+X`-facing wall the YZ projection dominates; for a `-Z`-facing wall the XY projection dominates. This gives natural-looking texture on vertical surfaces without UV seams.
+
+**Normal maps on walls:** the slice's non-triplanar normal-map path uses `uv()` (planar). On the terrain top surface this is correct by construction (`PlaneGeometry` UVs). On walls, UVs from the manually-built wall geometry must run along the edge (u) and from top to bottom (v), so the normal map orients correctly. This is a wall-geometry construction responsibility, handled when the wall vertices are built.
+
+**Bottom face UV:** assigned in the mesh builder to span `[0,1]²` across the bottom rectangle, keeping normal-map orientation consistent.
 
 ## Technical Decisions
 
-### New `slab.ts` module (not terrain.ts)
-The slab is geometrically and materially distinct from the terrain surface — different mesh lifecycle (5 meshes resized on world-bounds change), different material (cliff-only, no slope blend). Keeping it separate from `terrain.ts` preserves the ~300-line file limit and keeps concerns separated.
+### Unified mesh in `terrain.ts` (no `slab.ts` module)
+
+**Revision from initial design:** this slice originally proposed a separate `slab.ts` module with 5 `PlaneGeometry` meshes forming a flat-topped rectangular slab below a floating terrain surface. During implementation, that approach revealed two problems:
+1. The flat-topped slab (walls with top edge at `Y = 0`) was obscured/clipped by terrain elevation at the edges — the terrain surface is *above* `Y = 0` at the edges, leaving gaps where the dark slab top showed through between hills.
+2. Extending walls upward to meet the terrain edge requires the wall top edge to track the terrain edge *profile*, which a simple rectangle cannot do.
+
+The fix — walls that share the terrain edge profile — makes the slab and terrain logically one thing. Keeping them as separate modules with shared-vertex coordination between them is more complex than merging. The unified-mesh approach keeps all geometry construction in `terrain.ts` (under the ~300-line budget), reuses the existing `TerrainMaterialHandle`, and eliminates the entire `slab.ts` module plus its tests.
+
+The `slab.ts` module and `slab.test.ts` created during initial implementation are **removed** as part of this revision. `createTerrainMesh` / `applyTerrainToMesh` / `applyFlatPlane` grow to produce the closed mesh.
 
 ### Textures as optional fields in BiomeConfig
 Making texture paths optional (`surfaceTexturePath?: string`) preserves the slice 110 fallback exactly — a `BiomeConfig` with no texture fields renders identically to slice 110. This means slice 111 does not break slice 110 behavior if textures are not sourced yet.
@@ -240,19 +265,9 @@ TSL ships `triplanarTexture` and `normalMap`, but not a combined "triplanar norm
 
 **Decision for this slice:** apply normal maps *non-triplanar* via standard UV — `normalMap(texture(normalMap, uv().mul(uTextureScale)))`. This is correct on the `PlaneGeometry` terrain mesh (one dominant projection axis already), and slab walls are flat planes where UV sampling is naturally correct. Minor seam artifacts at steep slope transitions on the terrain are an accepted visual compromise for this slice. A future slice can investigate bespoke triplanar-normal blending if the artifacts prove distracting.
 
-### SlabHandle interface
+### No SlabHandle interface
 
-```ts
-export interface SlabHandle {
-  group: THREE.Group;
-  /** Rebuild slab geometry to new world dimensions. */
-  resize: (worldWidth: number, worldHeight: number) => void;
-  /** Update slab material to match new biome (cliff color/texture). */
-  updateBiome: (biome: BiomeConfig) => void;
-}
-```
-
-`updateBiome` on the slab updates cliff color uniforms. If `cliffTexturePath` changed, `updateBiome` rebuilds the slab material (acceptable cost for a rare event).
+The initial design specified a `SlabHandle` returned from `createSlab`. That module is removed in the revised design; the terrain mesh is the only handle required, and its existing `TerrainMaterialHandle` already drives biome updates for the entire block (top surface + walls + bottom) via the unified slope-blend material.
 
 ## BiomeConfig Extension
 
@@ -309,18 +324,20 @@ Default alien vegetation biome additions:
 ## Success Criteria
 
 ### Functional Requirements
-- [ ] Slab is visible — 4 walls and a bottom face, correctly positioned at world edges, extending `slabDepth` below Y=0
-- [ ] Slab walls show cliff color/texture; no slope-based blending on flat walls
-- [ ] Slab geometry is rebuilt when world bounds change
-- [ ] When texture paths are present in `BiomeConfig`, terrain surface shows texture (not solid color)
-- [ ] No visible UV seams on sloped terrain areas (triplanar projection working)
+- [ ] Slab is visible — 4 walls and a bottom face, correctly positioned, extending `slabDepth` below the *lowest* terrain point
+- [ ] Wall top edges coincide with the terrain edge profile — no gaps, no clipping, no overhang
+- [ ] Walls render as pure cliff appearance (slope-blend resolves `normalWorld.y ≈ 0` to cliff side of the mix)
+- [ ] Slab rebuilds when TERRAIN updates (same trigger as the existing terrain surface rebuild)
+- [ ] When texture paths are present in `BiomeConfig`, terrain surface and walls both show texture
+- [ ] Triplanar projection works on walls: cliff texture visible without UV seams on vertical faces
 - [ ] Normal maps add surface detail visible under directional light
 - [ ] When texture paths are absent in `BiomeConfig`, solid-color fallback from slice 110 is preserved exactly
 
 ### Technical Requirements
-- [ ] `src/rendering/slab.ts` is a new module, under 300 lines
+- [ ] No `src/rendering/slab.ts` module in the final tree (removed during unification)
+- [ ] `src/rendering/terrain.ts` stays under ~300 lines, or documents the rationale if exceeded
 - [ ] `pnpm tsc --noEmit` clean
-- [ ] `pnpm test --run` passes (existing tests unbroken)
+- [ ] `pnpm test --run` passes
 - [ ] `pnpm build` clean
 - [ ] No shader compilation errors with `renderer.debug.checkShaderErrors = true`
 
@@ -360,20 +377,19 @@ Slab walls are the first near-vertical geometry in the scene. If the directional
 
 ## Implementation Notes
 
-### Suggested Order
-1. Add `slabDepth` and `textureScale` to `ViewerConfig`/`BiomeConfig`; extend `BiomeConfig` with optional texture path fields in `config.ts`.
-2. Create `slab.ts` with flat-colored slab geometry (uniform-backed cliff color/roughness/metalness material, no textures) — verify slab is visible in `pnpm dev`.
-3. Wire slab resize into `main.ts` world-bounds change handler.
-4. **Checkpoint:** visual verify slab walls show directional shading variation (gates issue #1 — see Risk Assessment).
+### Suggested Order (revised)
+1. Add `slabDepth` and `textureScale` to `ViewerConfig`/`BiomeConfig`; extend `BiomeConfig` with optional texture path fields in `config.ts`. *(Complete.)*
+2. Extend `applyTerrainToMesh` and `applyFlatPlane` in `terrain.ts` to build a unified closed mesh (top + 4 walls + bottom) as a single indexed `BufferGeometry`. Remove `slab.ts` and `slab.test.ts`.
+3. Verify in `pnpm dev` that the unified mesh renders: walls follow terrain edge profile, no gaps above/below terrain, walls render as pure cliff (dark brown) via slope-blend.
+4. **Checkpoint:** directional shading variation is visible on walls (gates issue #1 — see Risk Assessment).
 5. Source CC0 textures, place in `public/textures/biomes/alien/`.
-6. Add diffuse texture loading to `createTerrainMaterial` — `triplanarTexture(texture(map), null, null, uTextureScale)`, tinted by color uniform. Verify tiling looks right against concept art.
-7. Add non-triplanar normal maps via `normalMap(texture(normalMap, uv().mul(uTextureScale)))`.
+6. Add diffuse texture loading to `createTerrainMaterial` — `triplanarTexture(texture(map), null, null, uTextureScale)`, tinted by color uniform. Verify tiling looks right on both terrain top and walls.
+7. Add non-triplanar normal maps via `normalMap(texture(normalMap, uv().mul(uTextureScale)))`. Requires wall UVs built appropriately in step 2.
 8. Extend `TerrainMaterialHandle.updateBiome()` to detect texture-path changes and rebuild the material (preserve single-method contract).
-9. Update slab material to use cliff texture via standard UV when present (flat planes — no triplanar needed).
-10. Visual tuning: `textureScale`, `slabDepth` against concept art.
+9. Visual tuning: `textureScale`, `slabDepth` against concept art.
 
 ### Testing Strategy
-Unit tests cover geometry construction (slab dimensions, mesh count, wall positions, bottom-face orientation). Visual correctness — texture appearance, triplanar seam elimination, slab proportions — is verified manually against the concept art. The existing terrain height-lookup and geometry tests are unaffected.
+Unit tests cover the unified mesh construction: vertex counts (top + walls + bottom), wall top-edge vertices match terrain edge elevations, bottom face sits at `min(elevation) - slabDepth`, index buffer contains expected triangle counts. Visual correctness — texture appearance, triplanar seam elimination, slab proportions, cliff appearance on walls — is verified manually against the concept art. The existing terrain height-lookup tests are unaffected; existing `createTerrainMesh` / material tests remain valid.
 
 **Mocking pattern (inherited from slice 110):** The test setup mocks `three/webgpu` (adds `MeshStandardNodeMaterial`, `Color`) and `three/tsl` (uniform/mix/smoothstep/texture nodes). Slice 111 will need to extend the `three/tsl` mock with whatever nodes the triplanar implementation uses (likely `triplanarTexture`, `positionWorld`, `normalMap`). Texture loading in tests can be stubbed — `TextureLoader.load` returns a placeholder `THREE.Texture` — because tests verify the *node graph construction*, not the sampled pixel output.
 
