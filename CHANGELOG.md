@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 20260424
+### Added
+- Geological slab beneath the terrain — four side walls tracking the terrain edge elevation profile plus a bottom face, unified with the top surface as a single closed indexed `BufferGeometry` in `terrain.ts`. Walls render as pure cliff appearance via the existing slope-blend (`normalWorld.y ≈ 0` resolves below `slopeBlendLow`).
+- `slabDepth` field in `ViewerConfig` — depth of the slab below the lowest terrain point in world units (default `100`).
+- Triplanar diffuse texture sampling on terrain top and walls via TSL `triplanarTexture(texture(map), null, null, scaleNode)`. World-space projection eliminates UV seams on slopes; no per-frame CPU cost.
+- Tangent-space normal maps blended with the same slope factor and wrapped once with `normalMap()` (avoids `NormalMapNode` / `vec3` typing mismatch in `mix()`).
+- `BiomeConfig` extended with optional `surfaceTexturePath`, `cliffTexturePath`, `surfaceNormalPath`, `cliffNormalPath` plus required `textureScale` and `cliffTextureScale` (independent tiling density for vegetation vs. rock).
+- `TerrainMaterialHandle.updateBiome()` now detects texture-path changes and rebuilds the material (disposing the old one); uniform-only updates preserve the material reference. Single-method contract preserved per the slice design.
+- 2K CC0 PBR textures shipped under `public/textures/biomes/default/` (surface + cliff diffuse and normal maps).
+
+### Changed
+- `applyTerrainToMesh` and `applyFlatPlane` now build a closed unified mesh (top + 4 walls + bottom) instead of just a top-surface plane. Vertex layout preserves the slice 110 invariant: first `rows*cols` vertices are the top surface in row-major order.
+- `applyFlatPlane` no longer renders a literal flat plane — it builds a flat-topped slab with the same wall/bottom geometry as the TERRAIN path, for a consistent silhouette before terrain data arrives.
+
+### Removed
+- `src/rendering/slab.ts` and `src/rendering/slab.test.ts` (initial design proposed a separate slab module; mid-implementation revision unified everything into `terrain.ts` for guaranteed gap-free seams between top and walls).
+
 ## [0.6.0] - 20260422
 ### Added
 - `BiomeConfig` interface in `config.ts` — PBR biome appearance parameters (surface/cliff colors, roughness, metalness, slope blend thresholds)

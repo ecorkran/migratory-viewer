@@ -6,8 +6,8 @@ parent: user/architecture/100-slices.viewer-foundation.md
 dependencies: [110-terrain-surface-material]
 interfaces: []
 dateCreated: 20260422
-dateUpdated: 20260423
-status: in_progress
+dateUpdated: 20260424
+status: complete
 ---
 
 # Slice Design: Terrain Slab and Texture
@@ -343,30 +343,41 @@ Default alien vegetation biome additions:
 
 ### Verification Walkthrough
 
-**Pre-flight:**
+**Pre-flight (gates 1, 2, 3):**
 ```bash
-pnpm tsc --noEmit
-pnpm test --run
-pnpm build
+pnpm tsc --noEmit    # exit 0, no type errors
+pnpm test --run      # 71 tests pass, 5 files
+pnpm build           # exit 0; chunk-size warning is pre-existing, not a failure
 ```
+All three commands ran clean during T22. The test count grew from slice 110's 54 to 71 (+5 unified-mesh, +4 textured material, +3 normal-map, +5 texture-aware updateBiome).
 
-**Slab verification:**
-1. `pnpm dev` — connect to a world server. In perspective camera mode, orbit the camera to a low angle looking at the terrain edge.
-2. The terrain should appear as a thick slab: dark rocky walls on the sides, a flat bottom.
-3. Orbit around all four sides to confirm all walls are present and correctly positioned.
-4. If the world server sends a different world size on reconnect, verify the slab resizes correctly.
+**Unified-mesh verification (gates 4, 5):**
+1. `pnpm dev` — connect to a world server sending TERRAIN. In perspective camera mode, orbit to a low angle looking at the terrain edge.
+2. ✅ The terrain renders as a single solid block: top surface tracks elevation, four walls hug the terrain edge profile (no gaps, no clipping above terrain), bottom face visible from below. Walls render as dark cliff appearance via slope-blend (`normalWorld.y ≈ 0` falls below `slopeBlendLow = 0.65`).
+3. ✅ Orbit fully around — all four walls render with outward-facing front faces (the wall winding fix in commit 9d80dbf is required; without it, walls appear inside-out and can only be seen from inside the slab).
+4. *Note:* slab geometry rebuilds on TERRAIN updates (`applyTerrainToMesh`), not just on world-bounds change — walls follow live elevation changes if the server pushes new TERRAIN.
 
-**Texture verification:**
-5. With texture files present in `public/textures/biomes/alien/`, the terrain surface should show organic texture detail — not a flat solid green.
-6. On steep cliff areas, the rock texture should be visible. The transition between surface and cliff textures should be smooth (following the slope blend from slice 110).
-7. Look for UV seam artifacts on slopes (sharp lines where the texture projection changes). These should not be visible with triplanar mapping working correctly.
-8. Open browser console — confirm no shader compilation warnings or errors.
+**Issue #1 gate (gate 6):**
+5. ✅ Walls show visible directional shading variation when the sun is low and near-parallel to one wall — one side lit, opposite darker. Issue #1 (weak directional contrast at low angles) did not manifest as a blocker on slab walls; the directionalPosition tuning from slice 110 (`[-400, 600, 600]`) was sufficient.
 
-**Fallback verification:**
-9. Temporarily remove all texture paths from `BiomeConfig` in `config.ts` and reload. Confirm the terrain renders with solid colors (slice 110 behavior) — no errors, no blank meshes.
+**Texture verification (gates 7, 8, 9):**
+6. ✅ Top surface and walls both show organic texture detail (CC0 PBR maps from `public/textures/biomes/default/`). Triplanar projection on diffuse handles wall faces correctly via world-space sampling — no UV seams on sloped transitions.
+7. ✅ Normal maps add visible surface relief on top and walls under the directional light.
+8. ✅ Cliff and surface texture transition follows the slope-blend smoothly. Cliff appearance dominates near-vertical geometry; surface dominates near-horizontal.
 
-**Visual target check:**
-10. Compare against `project-documents/user/reference/concept-art/migratory-terrain-concept.png`. The terrain surface texture character, slab depth, and overall composition should be consistent with the concept art.
+**Texture tiling (independent scales):**
+9. ✅ `BiomeConfig` exposes two scales: `textureScale` (surface) and `cliffTextureScale` (cliff). Tuned to `5.0 / 1.0` against the concept art — surface tiles tightly enough to show vegetation density, walls tile loosely enough to read as geological strata. Initial Option-1 attempt to unify coordinates via `positionWorld` axis-selection (`select`/`greaterThan` chain) broke shader compilation and was reverted (~commit history); the two-uniform Option-2 approach (commit 7e3a0d1) is the shipped solution.
+
+**Fallback verification (gate 10):**
+10. ✅ Removed all four texture paths from `DEFAULT_BIOME` and reloaded — terrain rendered in solid colors matching slice 110 exactly, no errors, no blank meshes. Texture paths restored after the check.
+
+**Visual target check (gate 11):**
+11. ✅ Compared against `project-documents/user/reference/concept-art/migratory-terrain-concept.png` — the alien-vegetation surface character, geological slab depth, and overall composition match the concept art closely enough to call slice 111 visually complete. Further refinement (e.g. distinct strata bands on walls) would be a future-slice concern.
+
+**Caveats / follow-ups:**
+- The slab now lives in `terrain.ts` as a unified closed mesh, *not* in a separate `slab.ts` module as the original design proposed. See "Unified mesh in terrain.ts" in Technical Decisions for the rationale (and the superseded T3–T7 entries in the task file).
+- `slabDepth` is now measured **below `min(elevation)`**, not below `Y = 0` — bottom face sits at `min(elevation) - slabDepth` to give a consistent visible thickness regardless of terrain elevation range.
+- `BiomeConfig` gained `cliffTextureScale` (a second required uniform) which was not in the original design — this is the only schema change vs. the design table.
 
 ## Risk Assessment
 

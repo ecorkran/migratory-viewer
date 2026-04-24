@@ -6,8 +6,8 @@ lld: user/slices/111-slice.terrain-slab-and-texture.md
 dependencies: [110-terrain-surface-material]
 projectState: Slice 110 complete and merged to main (commits c8401ed, b385ad0, aae4d6e, 8cfaccc). BiomeConfig, TerrainMaterialHandle, createTerrainMaterial() in place. 54 tests passing, build clean. Open issue #1 tracks weak directional lighting contrast at low camera angles — may become blocking for slab-wall visual verification.
 dateCreated: 20260423
-dateUpdated: 20260423
-status: in_progress
+dateUpdated: 20260424
+status: complete
 ---
 
 ## Context Summary
@@ -158,33 +158,33 @@ The 4th argument is tiling scale (`Node<float>`, default `float(1)`), confirmed 
 
 ### Tuning and closeout
 
-- [ ] **T20 — Visual tuning: `textureScale` and `slabDepth`** *(effort: 2)*
-  - [ ] Run `pnpm dev` and compare against `project-documents/user/reference/concept-art/migratory-terrain-concept.png`
-  - [ ] Adjust `DEFAULT_BIOME.textureScale` until tiling density looks right (too low = stretched textures; too high = visible repetition)
-  - [ ] Adjust `ViewerConfig.slabDepth` until the slab's visible depth matches the concept art's geological slab
-  - [ ] Verify the empirical `slopeBlendLow / slopeBlendHigh` values from slice 110 (`0.65 / 0.90`) still look right with textures; retune only if needed and note the change
-  - [ ] Check browser console — confirm no shader compilation warnings or errors
-  - [ ] Walk through the slice design's Verification Walkthrough and confirm each step passes
-  - [ ] **Success:** Visual match to concept art is satisfactory; all walkthrough steps pass
+- [x] **T20 — Visual tuning: `textureScale` and `slabDepth`** *(effort: 2)*
+  - [x] Run `pnpm dev` and compare against `project-documents/user/reference/concept-art/migratory-terrain-concept.png`
+  - [x] Adjust `DEFAULT_BIOME.textureScale` until tiling density looks right (too low = stretched textures; too high = visible repetition)
+  - [x] Adjust `ViewerConfig.slabDepth` until the slab's visible depth matches the concept art's geological slab
+  - [x] Verify the empirical `slopeBlendLow / slopeBlendHigh` values from slice 110 (`0.65 / 0.90`) still look right with textures; retune only if needed and note the change
+  - [x] Check browser console — confirm no shader compilation warnings or errors
+  - [x] Walk through the slice design's Verification Walkthrough and confirm each step passes
+  - [x] **Success:** Visual match to concept art is satisfactory; all walkthrough steps pass
 
-- [ ] **T21 — Fallback verification: BiomeConfig without texture paths** *(effort: 1)*
-  - [ ] Temporarily remove all four texture paths from `DEFAULT_BIOME` (set to `undefined`) and reload `pnpm dev`
-  - [ ] Confirm terrain renders with solid colors (slice 110 behavior exactly) — no errors, no blank meshes, no shader warnings
-  - [ ] Confirm walls and bottom render with solid cliff color (pure-cliff resolution via slope-blend)
-  - [ ] Restore `DEFAULT_BIOME` texture paths
-  - [ ] **Success:** Both paths (textured and solid) work end-to-end
+- [x] **T21 — Fallback verification: BiomeConfig without texture paths** *(effort: 1)*
+  - [x] Temporarily remove all four texture paths from `DEFAULT_BIOME` (set to `undefined`) and reload `pnpm dev`
+  - [x] Confirm terrain renders with solid colors (slice 110 behavior exactly) — no errors, no blank meshes, no shader warnings
+  - [x] Confirm walls and bottom render with solid cliff color (pure-cliff resolution via slope-blend)
+  - [x] Restore `DEFAULT_BIOME` texture paths
+  - [x] **Success:** Both paths (textured and solid) work end-to-end
 
-- [ ] **T22 — Final build and test pass** *(effort: 1)*
-  - [ ] `pnpm tsc --noEmit` — no errors
-  - [ ] `pnpm test --run` — all tests pass
-  - [ ] `pnpm build` — clean production build; verify texture files are either bundled or correctly served via `public/`
-  - [ ] **Success:** All three commands exit 0
+- [x] **T22 — Final build and test pass** *(effort: 1)*
+  - [x] `pnpm tsc --noEmit` — no errors
+  - [x] `pnpm test --run` — all tests pass
+  - [x] `pnpm build` — clean production build; verify texture files are either bundled or correctly served via `public/`
+  - [x] **Success:** All three commands exit 0
 
-- [ ] **T23 — Final commit and slice closeout** *(effort: 1)*
-  - [ ] Stage any remaining tuning changes (`textureScale`, `slabDepth`, possibly `slopeBlendLow/High`)
-  - [ ] Commit: `feat(terrain): tune slab depth and texture scale against concept art`
-  - [ ] Update slice design frontmatter: `status: complete`; rewrite Verification Walkthrough with actual commands and outcomes observed during T20
-  - [ ] Update `CHANGELOG.md` with a `0.7.0` (or appropriate) entry summarizing slice 111 deliverables
-  - [ ] Update slice plan entry in `project-documents/user/architecture/100-slices.viewer-foundation.md` — check the `[ ]` box for slice 111
-  - [ ] Commit: `docs: mark slice 111 complete; update CHANGELOG and slice plan`
-  - [ ] **Success:** Slice 111 main shows the full set of semantic commits; working tree clean; all success criteria from the slice design are checked off
+- [x] **T23 — Final commit and slice closeout** *(effort: 1)*
+  - [x] Stage any remaining tuning changes (`textureScale`, `slabDepth`, possibly `slopeBlendLow/High`)
+  - [x] Commit: `feat(terrain): tune slab depth and texture scale against concept art`
+  - [x] Update slice design frontmatter: `status: complete`; rewrite Verification Walkthrough with actual commands and outcomes observed during T20
+  - [x] Update `CHANGELOG.md` with a `0.7.0` (or appropriate) entry summarizing slice 111 deliverables
+  - [x] Update slice plan entry in `project-documents/user/architecture/100-slices.viewer-foundation.md` — check the `[ ]` box for slice 111
+  - [x] Commit: `docs: mark slice 111 complete; update CHANGELOG and slice plan`
+  - [x] **Success:** Slice 111 main shows the full set of semantic commits; working tree clean; all success criteria from the slice design are checked off
