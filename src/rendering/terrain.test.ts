@@ -145,6 +145,7 @@ vi.mock('../config.ts', () => ({
       slopeBlendLow: 0.55,
       slopeBlendHigh: 0.80,
       textureScale: 0.05,
+      cliffTextureScale: 0.05,
     },
     terrainMaxCells: 4_000_000,
     entityVerticalOffsetRatio: 0.5,
@@ -444,6 +445,7 @@ describe('createTerrainMaterial — updateBiome', () => {
       slopeBlendLow: 0.55,
       slopeBlendHigh: 0.80,
       textureScale: 0.05,
+      cliffTextureScale: 0.05,
       ...overrides,
     };
   }
@@ -495,6 +497,7 @@ describe('createTerrainMaterial — textured path', () => {
       slopeBlendLow: 0.55,
       slopeBlendHigh: 0.80,
       textureScale: 0.05,
+      cliffTextureScale: 0.05,
       ...overrides,
     };
   }
@@ -607,6 +610,7 @@ describe('createTerrainMaterial — texture-aware updateBiome', () => {
       slopeBlendLow: 0.55,
       slopeBlendHigh: 0.80,
       textureScale: 0.05,
+      cliffTextureScale: 0.05,
       ...overrides,
     };
   }

@@ -41,15 +41,16 @@ export interface TerrainMaterialHandle {
 interface MaterialBuild {
   material: THREE.MeshStandardNodeMaterial;
   uniforms: {
-    uSurfaceColor:     ReturnType<typeof uniform>;
-    uCliffColor:       ReturnType<typeof uniform>;
-    uSurfaceRoughness: ReturnType<typeof uniform>;
-    uCliffRoughness:   ReturnType<typeof uniform>;
-    uSurfaceMetalness: ReturnType<typeof uniform>;
-    uCliffMetalness:   ReturnType<typeof uniform>;
-    uSlopeBlendLow:    ReturnType<typeof uniform>;
-    uSlopeBlendHigh:   ReturnType<typeof uniform>;
-    uTextureScale:     ReturnType<typeof uniform>;
+    uSurfaceColor:      ReturnType<typeof uniform>;
+    uCliffColor:        ReturnType<typeof uniform>;
+    uSurfaceRoughness:  ReturnType<typeof uniform>;
+    uCliffRoughness:    ReturnType<typeof uniform>;
+    uSurfaceMetalness:  ReturnType<typeof uniform>;
+    uCliffMetalness:    ReturnType<typeof uniform>;
+    uSlopeBlendLow:     ReturnType<typeof uniform>;
+    uSlopeBlendHigh:    ReturnType<typeof uniform>;
+    uTextureScale:      ReturnType<typeof uniform>;
+    uCliffTextureScale: ReturnType<typeof uniform>;
   };
 }
 
@@ -69,9 +70,10 @@ function buildMaterial(biome: BiomeConfig): MaterialBuild {
   const uCliffRoughness   = uniform(biome.cliffRoughness);
   const uSurfaceMetalness = uniform(biome.surfaceMetalness);
   const uCliffMetalness   = uniform(biome.cliffMetalness);
-  const uSlopeBlendLow    = uniform(biome.slopeBlendLow);
-  const uSlopeBlendHigh   = uniform(biome.slopeBlendHigh);
-  const uTextureScale     = uniform(biome.textureScale);
+  const uSlopeBlendLow     = uniform(biome.slopeBlendLow);
+  const uSlopeBlendHigh    = uniform(biome.slopeBlendHigh);
+  const uTextureScale      = uniform(biome.textureScale);
+  const uCliffTextureScale = uniform(biome.cliffTextureScale);
 
   // normalWorld.y is 1.0 on horizontal, 0.0 on vertical cliff, -1.0 on downward-facing bottom.
   // Both walls (y≈0) and bottom (y=-1) fall below slopeBlendLow and render as pure cliff.
@@ -85,8 +87,9 @@ function buildMaterial(biome: BiomeConfig): MaterialBuild {
     const cliffMap   = loadDiffuse(biome.cliffTexturePath);
 
     // triplanarTexture projects a single texture along world X/Y/Z. 4th arg is tiling scale.
+    // Surface and cliff textures use independent scales so vegetation and rock can tile differently.
     const surfaceDiffuse = triplanarTexture(texture(surfaceMap), null, null, uTextureScale);
-    const cliffDiffuse   = triplanarTexture(texture(cliffMap),   null, null, uTextureScale);
+    const cliffDiffuse   = triplanarTexture(texture(cliffMap),   null, null, uCliffTextureScale);
 
     // Color uniforms act as tints (multiply). Keeps the committed palette governing mood.
     material.colorNode = mix(
@@ -108,7 +111,7 @@ function buildMaterial(biome: BiomeConfig): MaterialBuild {
     const cliffNormalTex   = loadNormal(biome.cliffNormalPath);
 
     const surfaceSample = texture(surfaceNormalTex, uv().mul(uTextureScale));
-    const cliffSample   = texture(cliffNormalTex,   uv().mul(uTextureScale));
+    const cliffSample   = texture(cliffNormalTex,   uv().mul(uCliffTextureScale));
     material.normalNode = normalMap(mix(cliffSample, surfaceSample, blendFactor));
   }
 
@@ -119,7 +122,7 @@ function buildMaterial(biome: BiomeConfig): MaterialBuild {
       uSurfaceRoughness, uCliffRoughness,
       uSurfaceMetalness, uCliffMetalness,
       uSlopeBlendLow, uSlopeBlendHigh,
-      uTextureScale,
+      uTextureScale, uCliffTextureScale,
     },
   };
 }
@@ -132,9 +135,10 @@ function applyUniformBiome(u: MaterialBuild['uniforms'], b: BiomeConfig): void {
   u.uCliffRoughness.value   = b.cliffRoughness;
   u.uSurfaceMetalness.value = b.surfaceMetalness;
   u.uCliffMetalness.value   = b.cliffMetalness;
-  u.uSlopeBlendLow.value    = b.slopeBlendLow;
-  u.uSlopeBlendHigh.value   = b.slopeBlendHigh;
-  u.uTextureScale.value     = b.textureScale;
+  u.uSlopeBlendLow.value     = b.slopeBlendLow;
+  u.uSlopeBlendHigh.value    = b.slopeBlendHigh;
+  u.uTextureScale.value      = b.textureScale;
+  u.uCliffTextureScale.value = b.cliffTextureScale;
 }
 
 /**

@@ -24,8 +24,10 @@ export interface BiomeConfig {
   slopeBlendLow: number;
   /** normalWorld.y ≥ this → full surface appearance. */
   slopeBlendHigh: number;
-  /** Triplanar tiling scale (larger = tighter tiling). Applies to both diffuse and normal maps. */
+  /** Triplanar tiling scale for the flat-surface textures (larger = tighter tiling). */
   textureScale: number;
+  /** Tiling scale for cliff textures. Decoupled from surface so vegetation and rock can tile independently. */
+  cliffTextureScale: number;
   /** Root-relative URL for the flat-surface diffuse texture. Optional — omit for solid color. */
   surfaceTexturePath?: string;
   /** Root-relative URL for the cliff diffuse texture. Optional — omit for solid color. */
@@ -46,7 +48,8 @@ export const DEFAULT_BIOME: BiomeConfig = {
   cliffMetalness:   0.05,
   slopeBlendLow:    0.65,
   slopeBlendHigh:   0.90,
-  textureScale:     5.00,
+  textureScale:      5.00,
+  cliffTextureScale: 1.00,
   surfaceTexturePath: '/textures/biomes/default/surface-diffuse.jpg',
   cliffTexturePath:   '/textures/biomes/default/cliff-diffuse.jpg',
   surfaceNormalPath:  '/textures/biomes/default/surface-normal.jpg',
@@ -152,7 +155,7 @@ const config: ViewerConfig = {
   hemisphereGroundColor: 0x0a1a0a,   // near-black green ground bounce
   hemisphereIntensity: 1.1,
   directionalColor: 0xfff5d0,        // warm amber-white key light
-  directionalIntensity: Math.PI * 1.5,
+  directionalIntensity: Math.PI * 2.5,
   directionalPosition: [-400, 600, 600] as [number, number, number],
 
   zoomMin: 0.1,
