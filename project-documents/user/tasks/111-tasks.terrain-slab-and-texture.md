@@ -56,32 +56,32 @@ The 4th argument is tiling scale (`Node<float>`, default `float(1)`), confirmed 
 
 ### Unified-mesh tasks (revised approach)
 
-- [ ] **T3b — Remove `slab.ts`/`slab.test.ts`; extend `terrain.ts` with unified closed-mesh builder** *(effort: 3)*
-  - [ ] Delete `src/rendering/slab.ts` and `src/rendering/slab.test.ts`
-  - [ ] Remove `createSlab` import and wiring from `src/main.ts` (including `applyTerrain` / `applyFlat` calls on `slabHandle`)
-  - [ ] In `src/rendering/terrain.ts`, extend `applyTerrainToMesh(mesh, grid)` to build a single indexed `BufferGeometry` containing:
-    - [ ] Top surface: `rows × cols` vertices at `(originX + c*stepX, elevation[r*cols+c], originY + r*stepZ)` with standard row/col triangulation and UVs matching slice 110's `PlaneGeometry`-style layout
-    - [ ] 4 wall strips (N/S/E/W): top-edge vertices reuse terrain-edge vertex indices; bottom-edge vertices are new at `Y = min(elevation) - slabDepth`, same XZ. Triangulation = 2 triangles per quad; UVs run along edge (u) and top-to-bottom (v)
-    - [ ] Bottom face: reuses the 4 wall-bottom corner vertices; 2 triangles; UVs span `[0,1]²`
-  - [ ] Read `slabDepth` from `config.slabDepth` (module-level import, same pattern as existing `createTerrainMesh`)
-  - [ ] Call `geometry.computeVertexNormals()` after populating positions/indices (accepts bevelled top-edge seam — see slice design § "Normal generation")
-  - [ ] Extend `applyFlatPlane(mesh, worldWidth, worldHeight)` similarly: flat top at `Y = 0`, same 4 walls + bottom geometry pattern, bottom at `Y = -slabDepth`
-  - [ ] Keep `terrain.ts` readable; extract helpers (`buildWallStrip`, `buildBottomFace`) as needed; file may grow somewhat past ~200 lines but stay well under the 300-line soft limit if practical
-  - [ ] **Success:** `pnpm tsc --noEmit` clean; `slab.ts` and `slab.test.ts` no longer exist; `main.ts` imports nothing from `slab.ts`; terrain mesh in the scene now contains top + walls + bottom as a single mesh
+- [x] **T3b — Remove `slab.ts`/`slab.test.ts`; extend `terrain.ts` with unified closed-mesh builder** *(effort: 3)*
+  - [x] Delete `src/rendering/slab.ts` and `src/rendering/slab.test.ts`
+  - [x] Remove `createSlab` import and wiring from `src/main.ts` (including `applyTerrain` / `applyFlat` calls on `slabHandle`)
+  - [x] In `src/rendering/terrain.ts`, extend `applyTerrainToMesh(mesh, grid)` to build a single indexed `BufferGeometry` containing:
+    - [x] Top surface: `rows × cols` vertices at `(originX + c*stepX, elevation[r*cols+c], originY + r*stepZ)` with standard row/col triangulation and UVs matching slice 110's `PlaneGeometry`-style layout
+    - [x] 4 wall strips (N/S/E/W): top-edge vertices reuse terrain-edge vertex indices; bottom-edge vertices are new at `Y = min(elevation) - slabDepth`, same XZ. Triangulation = 2 triangles per quad; UVs run along edge (u) and top-to-bottom (v)
+    - [x] Bottom face: reuses the 4 wall-bottom corner vertices; 2 triangles; UVs span `[0,1]²`
+  - [x] Read `slabDepth` from `config.slabDepth` (module-level import, same pattern as existing `createTerrainMesh`)
+  - [x] Call `geometry.computeVertexNormals()` after populating positions/indices (accepts bevelled top-edge seam — see slice design § "Normal generation")
+  - [x] Extend `applyFlatPlane(mesh, worldWidth, worldHeight)` similarly: flat top at `Y = 0`, same 4 walls + bottom geometry pattern, bottom at `Y = -slabDepth`
+  - [x] Keep `terrain.ts` readable; extract helpers (`buildWallStrip`, `buildBottomFace`) as needed; file may grow somewhat past ~200 lines but stay well under the 300-line soft limit if practical
+  - [x] **Success:** `pnpm tsc --noEmit` clean; `slab.ts` and `slab.test.ts` no longer exist; `main.ts` imports nothing from `slab.ts`; terrain mesh in the scene now contains top + walls + bottom as a single mesh
 
-- [ ] **T4b — Tests: unified mesh construction** *(effort: 2)*
-  - [ ] Update or add tests in `src/rendering/terrain.test.ts` for the unified mesh
-  - [ ] Test: after `applyTerrainToMesh`, the geometry's position attribute has expected vertex count (`rows*cols + wall_bottoms`)
-  - [ ] Test: after `applyTerrainToMesh`, the geometry's index attribute has expected triangle count (terrain quads + 4 wall strips × `(edge-1)` quads × 2 tris + 2 bottom tris)
-  - [ ] Test: north-edge top vertices have Y equal to `elevation[0..cols-1]`; south-edge top vertices match `elevation[(rows-1)*cols + 0..cols-1]`
-  - [ ] Test: all 4 wall-bottom corners + the bottom face vertices have Y = `min(elevation) - slabDepth`
-  - [ ] Test: existing slice 110 behavior (height lookup via `getTerrainHeight`) is unchanged
-  - [ ] **Success:** `pnpm test --run` green; new tests clearly named under `describe('applyTerrainToMesh — unified slab', …)` or similar
+- [x] **T4b — Tests: unified mesh construction** *(effort: 2)*
+  - [x] Update or add tests in `src/rendering/terrain.test.ts` for the unified mesh
+  - [x] Test: after `applyTerrainToMesh`, the geometry's position attribute has expected vertex count (`rows*cols + wall_bottoms`)
+  - [x] Test: after `applyTerrainToMesh`, the geometry's index attribute has expected triangle count (terrain quads + 4 wall strips × `(edge-1)` quads × 2 tris + 2 bottom tris)
+  - [x] Test: north-edge top vertices have Y equal to `elevation[0..cols-1]`; south-edge top vertices match `elevation[(rows-1)*cols + 0..cols-1]`
+  - [x] Test: all 4 wall-bottom corners + the bottom face vertices have Y = `min(elevation) - slabDepth`
+  - [x] Test: existing slice 110 behavior (height lookup via `getTerrainHeight`) is unchanged
+  - [x] **Success:** `pnpm test --run` green; new tests clearly named under `describe('applyTerrainToMesh — unified slab', …)` or similar
 
-- [ ] **T7b — Commit unified-mesh restructure** *(effort: 1)*
-  - [ ] Stage deletions of `src/rendering/slab.ts`, `src/rendering/slab.test.ts`; stage modifications to `src/rendering/terrain.ts`, `src/rendering/terrain.test.ts`, `src/main.ts`
-  - [ ] Commit: `refactor(terrain): unify slab into terrain mesh as single closed geometry`
-  - [ ] **Success:** Commit created; `pnpm tsc --noEmit`, `pnpm test --run`, `pnpm build` all pass
+- [x] **T7b — Commit unified-mesh restructure** *(effort: 1)*
+  - [x] Stage deletions of `src/rendering/slab.ts`, `src/rendering/slab.test.ts`; stage modifications to `src/rendering/terrain.ts`, `src/rendering/terrain.test.ts`, `src/main.ts`
+  - [x] Commit: `refactor(terrain): unify slab into terrain mesh as single closed geometry`
+  - [x] **Success:** Commit created; `pnpm tsc --noEmit`, `pnpm test --run`, `pnpm build` all pass
 
 - [ ] **T8 — Checkpoint: visual verification of unified mesh + directional lighting** *(effort: 2)*
   - [ ] Run `pnpm dev` and connect to a world server that sends TERRAIN
