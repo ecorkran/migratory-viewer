@@ -304,10 +304,10 @@ function buildUnifiedGeometry(
   //     Viewer sees +Z on their LEFT. invert=true.
   //   - East wall (outward +X): looking from +X toward -X. i=0..rows-1 runs in +Z.
   //     Viewer sees +Z on their RIGHT. invert=false.
-  writeWallIndices(wallN_base, cols, /* invert */ false);
-  writeWallIndices(wallS_base, cols, /* invert */ true);
-  writeWallIndices(wallW_base, rows, /* invert */ true);
-  writeWallIndices(wallE_base, rows, /* invert */ false);
+  writeWallIndices(wallN_base, cols, /* invert */ true);
+  writeWallIndices(wallS_base, cols, /* invert */ false);
+  writeWallIndices(wallW_base, rows, /* invert */ false);
+  writeWallIndices(wallE_base, rows, /* invert */ true);
 
   // Bottom face, facing -Y (outward is down). Viewed from below (-Y looking up toward +Y),
   // to get CCW winding: NW → SW → NE and NE → SW → SE (mirror of the top-surface pattern).
