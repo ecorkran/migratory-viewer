@@ -57,9 +57,9 @@ export const PLAINTEXT_2X2_F32 = Uint8Array.of(
  */
 export const FRAME_CHUNK1_F32_ZSTD = Uint8Array.of(
   0x28, 0xb5, 0x2f, 0xfd, 0x24, 0x10, 0x81, 0x00,
-  0x00, 0x00, 0x80, 0x40, 0x00, 0x00, 0xa0, 0x40,
-  0x00, 0x00, 0xc0, 0x40, 0x00, 0x00, 0xe0, 0x40,
-  0xee, 0xa1, 0x32, 0xa1,
+  0x00, 0x00, 0x00, 0x80, 0x40, 0x00, 0x00, 0xa0,
+  0x40, 0x00, 0x00, 0xc0, 0x40, 0x00, 0x00, 0xe0,
+  0x40, 0xee, 0xa1, 0x32, 0xa1,
 );
 
 /**
@@ -220,4 +220,117 @@ export function buildSpecWorkedExample2x2(): ArrayBuffer {
     compression: TerrainCompression.ZSTD,
     compressedPayload: FRAME_2X2_F32_ZSTD,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Chunked frame builders
+// ---------------------------------------------------------------------------
+
+interface ChunkedHeaderInput {
+  rows: number;
+  cols: number;
+  resolution: number;
+  originX: number;
+  originY: number;
+  dtype: TerrainDtypeValue;
+  compression: TerrainCompressionValue;
+  chunkCount: number;
+  /** Required for UINT16; ignored otherwise. */
+  elevationMin?: number;
+  elevationMax?: number;
+}
+
+/**
+ * Build a TERRAIN_HEADER (`0x05`) frame. 38 bytes for non-uint16 dtypes;
+ * 54 bytes (with elevation_min/max) for uint16. Layout: bytes 0–33 are
+ * byte-position-identical to single-shot 0x03; bytes 34–37 hold chunk_count;
+ * bytes 38–53 hold the dequant range when dtype is uint16.
+ */
+export function buildTerrainHeader(input: ChunkedHeaderInput): ArrayBuffer {
+  const isUint16 = input.dtype === TerrainDtype.UINT16;
+  const totalBytes = isUint16 ? 54 : 38;
+  const buf = new ArrayBuffer(totalBytes);
+  const view = new DataView(buf);
+  view.setUint8(0, MessageType.TERRAIN_HEADER);
+  view.setUint32(1, input.rows, true);
+  view.setUint32(5, input.cols, true);
+  view.setFloat64(9, input.resolution, true);
+  view.setFloat64(17, input.originX, true);
+  view.setFloat64(25, input.originY, true);
+  const flags = (input.dtype & 0b11) | ((input.compression & 0b111) << 2);
+  view.setUint8(33, flags);
+  view.setUint32(34, input.chunkCount, true);
+  if (isUint16) {
+    if (input.elevationMin === undefined || input.elevationMax === undefined) {
+      throw new Error('UINT16 chunked headers require elevationMin/elevationMax');
+    }
+    view.setFloat64(38, input.elevationMin, true);
+    view.setFloat64(46, input.elevationMax, true);
+  }
+  return buf;
+}
+
+interface ChunkInput {
+  sequenceNumber: number;
+  rowOffset: number;
+  colOffset: number;
+  chunkRows: number;
+  chunkCols: number;
+  isLast: boolean;
+  /** Already-compressed payload bytes (or raw bytes when compression == NONE). */
+  compressedPayload: Uint8Array;
+}
+
+/**
+ * Build a TERRAIN_CHUNK (`0x04`) frame: 22-byte header + payload.
+ */
+export function buildTerrainChunk(input: ChunkInput): ArrayBuffer {
+  const buf = new ArrayBuffer(22 + input.compressedPayload.byteLength);
+  const view = new DataView(buf);
+  view.setUint8(0, MessageType.TERRAIN_CHUNK);
+  view.setUint32(1, input.sequenceNumber, true);
+  view.setUint32(5, input.rowOffset, true);
+  view.setUint32(9, input.colOffset, true);
+  view.setUint32(13, input.chunkRows, true);
+  view.setUint32(17, input.chunkCols, true);
+  view.setUint8(21, input.isLast ? 1 : 0);
+  new Uint8Array(buf).set(input.compressedPayload, 22);
+  return buf;
+}
+
+/**
+ * Encode `count` Float64 values as raw bytes for the requested dtype. For
+ * UINT16, quantizes against the supplied range. Returns a Uint8Array suitable
+ * for direct use as compression=NONE payload — for tests that round-trip
+ * through chunked frames with NONE compression.
+ */
+export function encodeRawDtype(
+  values: readonly number[],
+  dtype: TerrainDtypeValue,
+  elevationMin?: number,
+  elevationMax?: number,
+): Uint8Array {
+  if (dtype === TerrainDtype.F32) {
+    const buf = new ArrayBuffer(values.length * 4);
+    const view = new DataView(buf);
+    for (let i = 0; i < values.length; i++) view.setFloat32(i * 4, values[i], true);
+    return new Uint8Array(buf);
+  }
+  if (dtype === TerrainDtype.F64) {
+    const buf = new ArrayBuffer(values.length * 8);
+    const view = new DataView(buf);
+    for (let i = 0; i < values.length; i++) view.setFloat64(i * 8, values[i], true);
+    return new Uint8Array(buf);
+  }
+  if (elevationMin === undefined || elevationMax === undefined) {
+    throw new Error('UINT16 dtype requires elevationMin/elevationMax');
+  }
+  const buf = new ArrayBuffer(values.length * 2);
+  const view = new DataView(buf);
+  const range = elevationMax - elevationMin;
+  for (let i = 0; i < values.length; i++) {
+    const u = range === 0 ? 0 : Math.round(((values[i] - elevationMin) / range) * 65535);
+    view.setUint16(i * 2, u, true);
+  }
+  return new Uint8Array(buf);
 }

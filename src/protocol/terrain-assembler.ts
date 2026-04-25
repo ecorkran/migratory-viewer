@@ -47,9 +47,27 @@ interface TerrainHeaderPrefix {
   compression: TerrainCompressionValue;
 }
 
+const TERRAIN_CHUNK_HEADER_BYTES = 22;
+
+interface ChunkedTransferState {
+  headerMeta: TerrainHeaderPrefix;
+  elevationMin: number | undefined;
+  elevationMax: number | undefined;
+  grid: Float64Array;
+  written: Uint8Array;
+  expectedChunks: number;
+  receivedChunks: number;
+  /** Tracks each seq-num's claimed coordinates so duplicates can be classified. */
+  seenSequenceNumbers: Map<number, { rowOffset: number; colOffset: number; chunkRows: number; chunkCols: number }>;
+  /** Cumulative compressed/decompressed byte counts for the spec INFO log. */
+  bytesCompressed: number;
+  bytesDecompressed: number;
+}
+
 interface AssemblerState {
   state: 'IDLE' | 'EXPECTING_CHUNKS';
   stateUpdatesStarted: boolean;
+  chunked: ChunkedTransferState | null;
 }
 
 export interface TerrainAssembler {
@@ -244,10 +262,201 @@ function parseTerrainSingleShot(buffer: ArrayBuffer): ParsedTerrain | { error: s
   };
 }
 
+/**
+ * Handle a TERRAIN_HEADER (`0x05`) message. Initializes the chunked transfer
+ * state: parses bytes 0–33 (shared layout with single-shot 0x03), reads the
+ * `chunk_count` u32 at byte 34, and the optional uint16 dequant range at
+ * bytes 38–53. Allocates the destination grid and coverage mask.
+ */
+function startChunkedTransfer(
+  buffer: ArrayBuffer,
+  s: AssemblerState,
+): AssemblerOutput {
+  if (s.state === 'EXPECTING_CHUNKS') {
+    return { kind: 'protocol-error', reason: 'TERRAIN_HEADER received mid-chunked delivery' };
+  }
+  if (s.stateUpdatesStarted) {
+    return { kind: 'protocol-error', reason: 'TERRAIN_HEADER received after STATE_UPDATE began' };
+  }
+
+  const view = new DataView(buffer);
+  const prefix = readTerrainHeaderPrefix(buffer, view);
+  if ('error' in prefix) return { kind: 'protocol-error', reason: prefix.error };
+
+  const isUint16 = prefix.dtype === TerrainDtype.UINT16;
+  const minHeaderBytes = isUint16 ? 54 : 38;
+  if (buffer.byteLength < minHeaderBytes) {
+    return {
+      kind: 'protocol-error',
+      reason: `TERRAIN_HEADER truncated: got ${buffer.byteLength}, need >= ${minHeaderBytes}`,
+    };
+  }
+  const chunkCount = view.getUint32(34, true);
+  if (chunkCount === 0) {
+    return { kind: 'protocol-error', reason: 'TERRAIN_HEADER chunk_count is zero' };
+  }
+  let elevationMin: number | undefined;
+  let elevationMax: number | undefined;
+  if (isUint16) {
+    elevationMin = view.getFloat64(38, true);
+    elevationMax = view.getFloat64(46, true);
+  }
+
+  s.state = 'EXPECTING_CHUNKS';
+  s.chunked = {
+    headerMeta: prefix,
+    elevationMin,
+    elevationMax,
+    grid: new Float64Array(prefix.rows * prefix.cols),
+    written: new Uint8Array(prefix.rows * prefix.cols),
+    expectedChunks: chunkCount,
+    receivedChunks: 0,
+    seenSequenceNumbers: new Map(),
+    bytesCompressed: 0,
+    bytesDecompressed: 0,
+  };
+  return { kind: 'pending' };
+}
+
+/**
+ * Handle a TERRAIN_CHUNK (`0x04`) message: 22-byte header + compressed payload.
+ * Decompresses + dtype-decodes + writes into the destination grid; verifies
+ * coverage and finalizes the ParsedTerrain when last_chunk_flag is set.
+ *
+ * Pre-conditions enforced by caller: `state === 'EXPECTING_CHUNKS'` and
+ * `s.chunked !== null`.
+ */
+function handleChunk(
+  buffer: ArrayBuffer,
+  s: AssemblerState,
+): AssemblerOutput {
+  const ct = s.chunked;
+  if (ct === null) {
+    return { kind: 'protocol-error', reason: 'TERRAIN_CHUNK received without preceding TERRAIN_HEADER' };
+  }
+  if (buffer.byteLength < TERRAIN_CHUNK_HEADER_BYTES) {
+    return { kind: 'protocol-error', reason: `TERRAIN_CHUNK header truncated: got ${buffer.byteLength}` };
+  }
+  const view = new DataView(buffer);
+  const sequenceNumber = view.getUint32(1, true);
+  const rowOffset = view.getUint32(5, true);
+  const colOffset = view.getUint32(9, true);
+  const chunkRows = view.getUint32(13, true);
+  const chunkCols = view.getUint32(17, true);
+  const lastChunkFlag = view.getUint8(21);
+
+  const { headerMeta, elevationMin, elevationMax } = ct;
+  if (chunkRows === 0 || chunkCols === 0) {
+    return { kind: 'protocol-error', reason: `TERRAIN_CHUNK has zero rows or cols: ${chunkRows}×${chunkCols}` };
+  }
+  if (rowOffset + chunkRows > headerMeta.rows || colOffset + chunkCols > headerMeta.cols) {
+    return {
+      kind: 'protocol-error',
+      reason: `TERRAIN_CHUNK bounds out of range: offset (${rowOffset},${colOffset}) + size (${chunkRows}×${chunkCols}) exceeds header (${headerMeta.rows}×${headerMeta.cols})`,
+    };
+  }
+
+  // Duplicate-seq policy (per the reference's two-case refinement).
+  const prior = ct.seenSequenceNumbers.get(sequenceNumber);
+  let isBenignRetransmit = false;
+  if (prior !== undefined) {
+    if (
+      prior.rowOffset === rowOffset &&
+      prior.colOffset === colOffset &&
+      prior.chunkRows === chunkRows &&
+      prior.chunkCols === chunkCols
+    ) {
+      console.warn(`[net] terrain warning: duplicate chunk seq=${sequenceNumber} (last-write-wins)`);
+      isBenignRetransmit = true;
+    } else {
+      return {
+        kind: 'protocol-error',
+        reason: `duplicate sequence_number ${sequenceNumber} with different coordinates`,
+      };
+    }
+  } else {
+    ct.seenSequenceNumbers.set(sequenceNumber, { rowOffset, colOffset, chunkRows, chunkCols });
+  }
+
+  const compressed = new Uint8Array(buffer.slice(TERRAIN_CHUNK_HEADER_BYTES));
+  let decompressed: Uint8Array;
+  try {
+    decompressed = decompress(compressed, headerMeta.compression);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: 'protocol-error', reason: `malformed compressed payload: ${message}` };
+  }
+  const cellCount = chunkRows * chunkCols;
+  const decoded = decodeDtype(decompressed, headerMeta.dtype, cellCount, elevationMin, elevationMax);
+  if ('error' in decoded) {
+    return { kind: 'protocol-error', reason: decoded.error };
+  }
+
+  // Coverage write. For non-retransmits, any cell with `written === 1` already
+  // is an overlap with a different sequence_number — protocol error.
+  for (let r = 0; r < chunkRows; r++) {
+    const srcOff = r * chunkCols;
+    const dstOff = (rowOffset + r) * headerMeta.cols + colOffset;
+    for (let c = 0; c < chunkCols; c++) {
+      const dstIdx = dstOff + c;
+      if (!isBenignRetransmit && ct.written[dstIdx] === 1) {
+        return {
+          kind: 'protocol-error',
+          reason: `chunk overlap at row=${rowOffset + r} col=${colOffset + c}`,
+        };
+      }
+      ct.grid[dstIdx] = decoded[srcOff + c];
+      ct.written[dstIdx] = 1;
+    }
+  }
+
+  ct.bytesCompressed += compressed.byteLength;
+  ct.bytesDecompressed += decompressed.byteLength;
+  if (!isBenignRetransmit) ct.receivedChunks++;
+
+  if (lastChunkFlag !== 1) {
+    return { kind: 'pending' };
+  }
+
+  // Finalize: assert chunk count and full coverage.
+  if (ct.receivedChunks !== ct.expectedChunks) {
+    return {
+      kind: 'protocol-error',
+      reason: `chunk count mismatch on finalize: received ${ct.receivedChunks}, expected ${ct.expectedChunks}`,
+    };
+  }
+  for (let i = 0; i < ct.written.length; i++) {
+    if (ct.written[i] !== 1) {
+      return { kind: 'protocol-error', reason: `missing chunk coverage gap at index ${i}` };
+    }
+  }
+
+  const message: ParsedTerrain = {
+    type: MessageType.TERRAIN,
+    rows: headerMeta.rows,
+    cols: headerMeta.cols,
+    resolution: headerMeta.resolution,
+    originX: headerMeta.originX,
+    originY: headerMeta.originY,
+    elevation: ct.grid,
+  };
+  console.info(
+    `[net] TERRAIN rows=${headerMeta.rows} cols=${headerMeta.cols} resolution=${headerMeta.resolution} ` +
+    `dtype=${describeDtype(headerMeta.dtype)} compression=${describeCompression(headerMeta.compression)} ` +
+    `chunks=${ct.expectedChunks} bytes_compressed=${ct.bytesCompressed} bytes_decompressed=${ct.bytesDecompressed}`,
+  );
+
+  // Reset chunked state — assembler returns to IDLE for any subsequent terrain.
+  s.state = 'IDLE';
+  s.chunked = null;
+  return { kind: 'message', message };
+}
+
 export function createTerrainAssembler(): TerrainAssembler {
   const s: AssemblerState = {
     state: 'IDLE',
     stateUpdatesStarted: false,
+    chunked: null,
   };
 
   function feed(buffer: ArrayBuffer): AssemblerOutput {
@@ -281,9 +490,12 @@ export function createTerrainAssembler(): TerrainAssembler {
         return { kind: 'message', message: result };
       }
       case MessageType.TERRAIN_HEADER:
+        return startChunkedTransfer(buffer, s);
       case MessageType.TERRAIN_CHUNK:
-        // TODO T9 — implement chunked path.
-        return { kind: 'protocol-error', reason: 'chunked terrain not implemented in T7' };
+        if (s.state !== 'EXPECTING_CHUNKS') {
+          return { kind: 'protocol-error', reason: 'TERRAIN_CHUNK received without preceding TERRAIN_HEADER' };
+        }
+        return handleChunk(buffer, s);
       default:
         return {
           kind: 'protocol-error',
