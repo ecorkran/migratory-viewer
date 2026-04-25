@@ -11,7 +11,8 @@ dateCreated: 20260425
 dateUpdated: 20260425
 status: in_progress
 reviewLog:
-  - 20260425 — first review (verdict CONCERNS, model z-ai/glm-5.1) at project-documents/user/reviews/120-review.arch.world-authoring.md. Findings F001-F009 addressed in this revision; see "Review Remediation" section below.
+  - 20260425 — first review (verdict CONCERNS, model z-ai/glm-5.1) at project-documents/user/reviews/120-review.arch.world-authoring.md. Findings F001-F009 addressed in first revision; see "Review Remediation" section below.
+  - 20260425 — second review (verdict CONCERNS, model z-ai/glm-5.1) at project-documents/user/reviews/120-review.arch.world-authoring.md (file overwritten with second-pass findings, also F001-F010). All ten findings addressed in this revision.
 archIndex: 120
 component: world-authoring
 ---
@@ -78,14 +79,30 @@ The keyspace separation also resolves a subtle silent-override risk: if the merg
 
 ### Tiers compose by deep merge, with explicit override allowlists
 
-**Decision:** Effective render config is computed by **deep merge** of three already-validated tier configs against hardcoded defaults. The merge order is:
+**Decision:** Effective render config is computed by **deep merge** of three already-validated, *mergeable-subset* tier configs against hardcoded defaults. The merge order is:
 
 ```
-hardcoded defaults  →  world  →  biome.atmosphereOverrides  →  profile
-                       (1)              (2)                     (3)
+hardcoded defaults  →  world  →  unwrap(biome.atmosphereOverrides)  →  profile
+                       (1)              (2)                              (3)
 ```
 
-Each `→` is a deep merge of the right-hand side into the accumulated left-hand side. Deep merge means: for every key path in the override, if the value is a primitive (number, string, boolean, hex-color string), it replaces the accumulated value at that path; if the value is a nested object, the merge recurses into it; if the value is an array, it **replaces** the accumulated array (no array concatenation). Worked example:
+Each `→` is a deep merge of the right-hand side into the accumulated left-hand side.
+
+**The merge consumes the *mergeable subset* of each tier, not the raw YAML.** Each tier YAML contains both rendering parameters and *resolution-only* metadata. The validator splits each parsed file into two pieces:
+
+| Tier | Mergeable subset (flows into `ViewerConfig`) | Resolution-only keys (consumed by loader, not merged) |
+|---|---|---|
+| Profile | `camera`, `network`, `performance`, `debug` | `schemaVersion`, `profile`, `description`, `world` |
+| World | `sky`, `sun`, `fog`, `terrain` | `schemaVersion`, `world`, `description`, `defaultBiome` |
+| Biome | `surface`, `cliff`, `slopeBlend`, `props`, `audio`, `particles` | `schemaVersion`, `biome`, `description`, `atmosphereOverrides` (extracted, not merged as-is) |
+
+`atmosphereOverrides` is *not* in either column for biome — it's handled by step (2), which **extracts** its contents and merges them at their corresponding world-tier paths (e.g., `atmosphereOverrides.sky.*` becomes `sky.*` in the accumulator). The `atmosphereOverrides` wrapper key itself is discarded; it never appears in the final `ViewerConfig`. An implementer must not deep-merge the raw biome config into the accumulator — doing so would produce an invalid result with `atmosphereOverrides` nested inside the rendering keys.
+
+The resulting `ViewerConfig` therefore contains only rendering-parameter keys. `defaultBiome`, `schemaVersion`, etc. never leak into `getConfig().*`. A downstream module that wants to know the active biome name reads it from a separate accessor (e.g., `getActiveBiomeName()`), not from `getConfig()`.
+
+**Deep-merge value rules.** For every key path in the override, if the value is a primitive (number, string, boolean, hex-color string), it replaces the accumulated value at that path; if the value is a nested object, the merge recurses into it; if the value is an array, it **replaces** the accumulated array (no array concatenation). YAML `null` (`~` or explicit `null`) is a **deletion marker**: it removes the key from the accumulator entirely, allowing a higher tier to "unset" a value set by a lower tier. (Example: a biome that wants no fog at all writes `atmosphereOverrides: { fog: ~ }`, which deletes the `fog` key from the merged config; downstream code must treat `fog === undefined` as "no fog," not crash on a null-valued sub-field.) An author who wants to write a literal null primitive in a config does not have that option — every documented config field has a non-null type.
+
+Worked example:
 
 ```
 world.yaml:  sky: { hemisphereSkyColor: "0x1a1a4e", hemisphereGroundColor: "0x0a1a0a", hemisphereIntensity: 1.1 }
@@ -111,6 +128,8 @@ Authors do not have to repeat every field of a nested object to change one value
 
 A biome's `atmosphereOverrides` block containing any path outside this allowlist is a load-time schema error. Adding a new path to the allowlist requires a versioned schema migration (`schemaVersion: 1` → `2`) — same loud-failure principle as the wire-protocol opcode-versioning convention.
 
+**The allowlist lives in `schema.ts` as a single shared constant** (`ATMOSPHERE_OVERRIDE_ALLOWLIST`) referenced by both the biome validator and the world validator. The biome validator checks that every path under `atmosphereOverrides` is in the allowlist; the world validator references the same constant when constructing its own keyspace, so the two cannot drift. When a future slice adds a new world-tier top-level key (e.g., `weather`), the schema author makes one decision in one place — extend the allowlist or don't — and both validators pick up the new behavior. The biome validator therefore depends on `schema.ts`'s shared constant, not on the world validator's internal structure.
+
 **The profile tier does not deep-merge into world or biome keyspaces.** Step 3 above (profile merge) only touches the profile keyspace defined in the previous ADR (`camera`, `network`, `performance`, `debug`). The merge implementation is keyspace-aware: when applying the profile, it only writes to its own keyspace's keys in the accumulator. This is enforced both by the per-file keyspace validator (a profile *cannot contain* world keys) and by the merge step (which would reject them even if they slipped through).
 
 **Rationale:** Deep merge is what every layered-config system that anyone is happy with does (Kubernetes manifests, Vite config, ESLint config). Shallow merge forces authors to copy every sibling field, which is repetitive and breaks when the world tier adds new fields. Array replacement (rather than concatenation) is the safer default — concatenation is rarely what authors want and silently bloats lists when overrides accumulate.
@@ -118,6 +137,16 @@ A biome's `atmosphereOverrides` block containing any path outside this allowlist
 The narrow allowlist for `atmosphereOverrides` is what closes finding F003: the override mechanism is bounded by name, not just by convention. `slabDepth` cannot be overridden by a biome because the validator refuses to accept it under `atmosphereOverrides`. If a future slice decides slab depth *should* vary by biome, that's a deliberate schema migration with a version bump, not a leak through an unbounded override.
 
 **Consequence:** Slice 114 ships the `atmosphereOverrides` schema slot but rejects any non-empty content (the override mechanism doesn't exist until slice 115). Slice 115 implements the deep-merge step and the allowlist enforcement.
+
+**Pipeline shape across slices.** The four-stage pipeline above is the slice-115 endpoint. Earlier slices run a *prefix* of it — same code path, same merge function, just with fewer inputs:
+
+| Slice | `defaults.ts` contains | Pipeline stages active | Notes |
+|---|---|---|---|
+| 113 | All current hardcoded values: `camera`, `network`, `performance`, `debug`, **`sky`, `sun`, `fog`, `terrain`, `surface`, `cliff`, `slopeBlend`** (mirrors what's in [src/config.ts](../../src/config.ts) today). | `defaults → profile` only. Loader skips world/biome fetches because manifest lists none. | Profile YAMLs externalize. World/biome are still hardcoded inside `defaults.ts`. |
+| 114 | `defaults.ts` loses the biome-tier keys (`surface`, `cliff`, `slopeBlend`); they move into `public/biomes/<name>/biome.yaml`. | `defaults → biome → profile`. World still in defaults. | First biome.yaml ships; loader gains the biome fetch step. |
+| 115 | `defaults.ts` loses the world-tier keys (`sky`, `sun`, `fog`, `terrain`); they move into `public/config/worlds/<name>.yaml`. | Full pipeline: `defaults → world → unwrap(biome.atmosphereOverrides) → profile`. | World fetch + atmosphereOverrides extraction land together. |
+
+The merge function is written in slice 113 to accept any subset of the four inputs and apply only the stages whose inputs are present. Slice 114 and 115 add inputs to an existing pipeline rather than restructuring it; `defaults.ts` shrinks as content moves into YAML. This makes each slice's diff small and preserves the invariant that `getConfig()` returns the same effective values before and after each migration step (renderer behavior unchanged across all three slices).
 
 ### Schema is versioned from day one
 
@@ -147,7 +176,32 @@ public/
 
 `config/` and `biomes/` directories under `public/` are served verbatim by Vite's dev server and copied verbatim into `dist/` by `vite build`. The same paths work in development and production. There is no symlink, no copy step beyond Vite's normal `public/` handling, and no two-source-of-truth drift.
 
-**Discovery uses a build-time-generated manifest, not a runtime directory scan.** A small Vite plugin (`viteConfigManifest`) runs at dev-server start and at build time, scans the `public/config/profiles/`, `public/config/worlds/`, and `public/biomes/` directories, and writes `public/config/manifest.json` listing the discovered names and their YAML paths. The browser fetches this manifest to resolve names → paths. The plugin re-runs on file changes during dev, so adding or renaming a biome directory updates the manifest without a manual rebuild.
+**Discovery uses a build-time-generated manifest, not a runtime directory scan.** A small Vite plugin (`viteConfigManifest`) runs at dev-server start and at build time, scans `public/config/profiles/`, `public/config/experiments/`, `public/config/worlds/`, and `public/biomes/`, and writes `public/config/manifest.json` listing the discovered names and their YAML paths. The browser fetches this manifest to resolve names → paths. The plugin re-runs on file changes during dev, so adding or renaming a biome directory updates the manifest without a manual rebuild.
+
+`experiments/` is gitignored, but the plugin still scans it locally and merges its profiles into the manifest's `profiles` map under the same namespace as checked-in profiles — `?profile=my-experiment` resolves identically to `?profile=cinematic`. A name collision between `profiles/` and `experiments/` is a hard plugin-time error (the developer must rename one). In CI/production builds where `experiments/` is empty or absent, the manifest simply contains no entries from it.
+
+The manifest is a JSON object with this shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default":    { "path": "/config/profiles/default.yaml" },
+    "cinematic":  { "path": "/config/profiles/cinematic.yaml" },
+    "lowend":     { "path": "/config/profiles/lowend.yaml" },
+    "my-scratch": { "path": "/config/experiments/my-scratch.yaml" }
+  },
+  "worlds": {
+    "default":    { "path": "/config/worlds/default.yaml" }
+  },
+  "biomes": {
+    "alien-vegetation": { "path": "/biomes/alien-vegetation/biome.yaml" },
+    "desert-rock":      { "path": "/biomes/desert-rock/biome.yaml" }
+  }
+}
+```
+
+`discovery.ts` resolves a name by looking it up in the appropriate sub-map and returning the `path`. A missing name produces the error `profile "X" is not in the manifest (available: default, cinematic, lowend, my-scratch)` — listing alternatives so the developer can self-correct. The `path` field is structured (rather than a bare string) so future per-entry metadata (e.g., human-readable labels for an in-app picker UI) can be added without a manifest schema bump. The manifest's own `schemaVersion: 1` is checked at fetch time, same loud-failure principle as the YAML tiers.
 
 **Profile selection is a URL query parameter or `localStorage` value, not a Vite env var.** Reading `?profile=cinematic` from the URL means a developer can switch profiles without a rebuild. Falling back to `localStorage.getItem('migratory.profile')` lets a stable choice persist across sessions. The hardcoded fallback is `default`. (Note: `VITE_PROFILE` was the original sketch in the exploration doc; it was wrong because Vite env vars are baked at build time. Fix: runtime selection.)
 
@@ -159,7 +213,7 @@ There are two costs:
 
 This decision dissolves the "build-pipeline tension" risk previously logged: there is no tension, because biome assets and YAML live together under `public/biomes/<name>/`, the way they want to. Vite serves them as-is.
 
-**Consequence for tests:** Unit tests that exercise the loader use fixture YAML strings, not HTTP. Integration tests can spin up the dev server or use a path-based file:// URL. The loader's API takes raw YAML text, not a URL, so the tier above (the "fetch and parse" coordinator) is mockable trivially.
+**Consequence for tests:** Unit tests that exercise the loader use fixture YAML strings, not HTTP. Integration tests can spin up the dev server or use a path-based file:// URL. The loader's API takes raw YAML text, not a URL — the HTTP fetches live in a separate `fetcher.ts` coordinator (see Component Architecture below), which is the only module in the new code that does I/O. This split is what makes the loader trivially mockable: tests construct fixture YAML strings and call the loader directly, never going through HTTP or `fetcher.ts`.
 
 ### Biome packs are self-contained directories
 
@@ -187,6 +241,8 @@ This decision dissolves the "build-pipeline tension" risk previously logged: the
 - (c) RGB arrays.
 
 Option (a) is portable across every YAML library and reads identically to the existing source-code form (`0x1a3d1a`). PM-confirmed. The loader is responsible for parsing; downstream code receives the same JavaScript number it does today.
+
+**Strict grammar.** Color strings must match the regex `/^0x[0-9a-f]{6}$/`. That is: literal `0x` prefix (lowercase), followed by exactly six lowercase hex digits, no alpha channel, no `#` prefix, no uppercase. The schema validator rejects any other form at load time with a specific error pointing to the file, field, and offending value (e.g., `surface.color: "#1a3d1a" is not a valid color (expected /^0x[0-9a-f]{6}$/)`). The narrow grammar makes "are these two colors equal" a string-equality question and avoids a class of canonicalization bugs. The regex is exported from `schema.ts` as `HEX_COLOR_RE` so the validator and any future test/tooling reference one definition.
 
 ### Single profile, single world, single biome at runtime — for now
 
@@ -235,6 +291,8 @@ The magenta-checker convention is industry-standard *because* it's hard to confu
 
 **Consequence for slice 114:** Slice 114 ships the magenta-checker sentinel as a 64×64 PNG under `public/assets/missing-texture.png`. The loader holds a single shared `Texture` instance pointing at it. Three.js's caching ensures it's only decoded once.
 
+**Sentinel readiness gates biome texture loading.** Three.js's `TextureLoader` is async, so the sentinel is not usable until its own image has decoded. `missing-texture.ts` exposes `getSentinel(): Promise<Texture>` and an internal eager-load that begins at `initializeConfig()` time, before any biome texture loading starts. Biome texture loading awaits the sentinel promise once at startup (the same promise is reused — no per-texture await), then proceeds in parallel; any subsequent `onError` handler synchronously references the already-resolved `Texture`. If the sentinel itself fails to load (a viewer-build problem, not a content problem), `initializeConfig()` rejects with an explicit error: shipping a viewer without its missing-texture sentinel is a build defect, not a runtime condition to recover from.
+
 ## Component Architecture
 
 The 120-series introduces these new modules. Existing rendering code in `src/rendering/` and `src/state.ts` is unchanged — they still receive a hydrated `ViewerConfig` of the same shape, but reach it through an accessor function rather than a module-level singleton import.
@@ -251,7 +309,7 @@ public/
 │   │   └── cinematic.yaml         # checked in
 │   ├── worlds/
 │   │   └── default.yaml           # checked in
-│   └── experiments/               # gitignored — scratch profiles for local iteration
+│   └── experiments/               # gitignored — scratch profiles for local iteration; scanned by the manifest plugin
 └── biomes/
     ├── alien-vegetation/          # migrated from existing DEFAULT_BIOME in slice 114
     │   ├── biome.yaml
@@ -267,9 +325,10 @@ public/
 src/config/
 ├── types.ts                       # ViewerConfig + tier-specific TS interfaces (pure types, no runtime code)
 ├── defaults.ts                    # hardcoded defaults — fallback values when YAML omits a field
-├── schema.ts                      # per-tier schema definitions + validators (keyspace + structure + types)
-├── loader.ts                      # fetch → parse → validate → merge pipeline
-├── discovery.ts                   # manifest fetch + name → path resolution
+├── schema.ts                      # per-tier schema + validators + ATMOSPHERE_OVERRIDE_ALLOWLIST + HEX_COLOR_RE
+├── loader.ts                      # parse → validate → merge pipeline (pure: takes raw YAML text, returns ViewerConfig)
+├── fetcher.ts                     # the only HTTP-doing module: fetches manifest + tier YAMLs and hands text to loader
+├── discovery.ts                   # manifest parsing + name → path resolution (pure over a parsed manifest)
 ├── selection.ts                   # URL-param / localStorage / fallback profile picker
 ├── missing-texture.ts             # magenta-checker sentinel Texture management
 └── index.ts                       # exports getConfig() and initializeConfig() — no module-level singleton
@@ -281,14 +340,15 @@ vite.config.ts                     # adds viteConfigManifest plugin for manifest
 
 - **`types.ts`** is pure TypeScript types. No runtime code. Importable freely from anywhere; never causes side effects.
 - **`defaults.ts`** is hardcoded fallback values matching the current source-of-truth in [src/config.ts](../../src/config.ts). Pure data; no I/O.
-- **`schema.ts`** holds three validators (profile, world, biome), each enforcing its tier's keyspace, structure, types, and the `schemaVersion: 1` constraint. The `atmosphereOverrides` allowlist lives here.
-- **`loader.ts`** orchestrates: fetch profile YAML → validate → fetch world → validate → fetch biome → validate → deep-merge against `defaults.ts` → return the resulting `ViewerConfig`. Pure async function; no global state.
-- **`discovery.ts`** fetches `public/config/manifest.json` and resolves names to paths.
+- **`schema.ts`** holds three validators (profile, world, biome), each enforcing its tier's keyspace, structure, types, and the `schemaVersion: 1` constraint. Also exports the shared `ATMOSPHERE_OVERRIDE_ALLOWLIST` (consumed by both biome and world validators) and the `HEX_COLOR_RE` color-string grammar (see "YAML hex colors as strings" ADR).
+- **`loader.ts`** is a pure pipeline over **already-fetched YAML text strings**. Its public function takes `(profileYaml: string, worldYaml: string | undefined, biomeYaml: string | undefined)` and returns a `ViewerConfig` (or throws). Internally it parses each input with `js-yaml`, runs the per-tier validator, then deep-merges in the order defined by the tier-composition ADR. No HTTP, no global state, fully synchronous after the YAML strings are in hand. Tests construct fixture strings and call this directly.
+- **`fetcher.ts`** is the only module in `src/config/` that performs I/O. It owns: HTTP GET of `public/config/manifest.json`, HTTP GET of the active profile/world/biome YAML files (paths resolved by `discovery.ts`), and the `fetch` error → typed-error translation. It calls `loader.ts` with the fetched text strings and returns the loader's result. This is the "fetch and parse coordinator" referenced in the runtime-fetch ADR. Mocking `fetcher.ts` (or stubbing `globalThis.fetch`) is how integration tests exercise the full pipeline; unit tests bypass `fetcher.ts` entirely and call `loader.ts` directly.
+- **`discovery.ts`** parses a fetched manifest object and resolves names to paths. Pure over a parsed manifest — `fetcher.ts` does the HTTP, `discovery.ts` interprets the result.
 - **`selection.ts`** reads `?profile=<name>`, falls back to `localStorage.getItem('migratory.profile')`, falls back to `'default'`. Pure function over `Window` (mockable in tests).
 - **`missing-texture.ts`** owns the single shared magenta-checker `Texture` and the `onError` handler used by every biome texture load.
 - **`index.ts`** exports two functions: `initializeConfig()` (async, called once during app boot, runs the loader and stores the result in module-private state) and `getConfig()` (sync, returns the stored result, throws if `initializeConfig()` hasn't completed). All downstream code calls `getConfig()` — there is no `import config from '../config'` singleton anymore. **This is a behavior-preserving migration**: every existing call site that reads `config.foo` becomes `getConfig().foo`.
 
-### Why the split (resolves F009)
+### Why the module split
 
 The existing [src/config.ts](../../src/config.ts) holds three responsibilities that must be untangled to ship slice 113 cleanly: (1) the `ViewerConfig` and related interfaces (pure types), (2) the hardcoded values (data), (3) the import point that downstream code reaches for. Conflating them with module-level mutable state would create exactly the test-isolation problem the review flagged: tests would have to mutate a shared `config` export, and parallel tests would race.
 
@@ -303,22 +363,27 @@ This is a marginally bigger code change than "keep the singleton, add a loader,"
 
 ```
  1. App boot calls initializeConfig() before rendering starts.
- 2. selection.ts resolves the active profile name:
+ 2. missing-texture.ts begins eager-loading the magenta-checker sentinel (Promise<Texture>).
+ 3. selection.ts resolves the active profile name:
       URL ?profile=<name>  →  localStorage('migratory.profile')  →  'default'
- 3. discovery.ts fetches public/config/manifest.json (HTTP GET).
- 4. Loader fetches public/config/profiles/<profile>.yaml.
- 5. Profile validator: keyspace, schemaVersion, structure, types. Hard error on any failure.
- 6. Loader resolves the profile's `world:` name → fetches public/config/worlds/<world>.yaml.
- 7. World validator runs (same checks, world keyspace).
- 8. Loader resolves the world's `defaultBiome:` name → fetches public/biomes/<biome>/biome.yaml.
- 9. Biome validator runs (biome keyspace + atmosphereOverrides allowlist + reserved-slot empty check).
-10. Hydrator deep-merges in order:  defaults ← world ← biome.atmosphereOverrides ← profile.
-11. (DEV only) Preflight HEAD requests against every biome texture path; warn on 404.
-12. initializeConfig() stores the result in module-private state.
-13. App proceeds to renderer setup; existing code calls getConfig() to read values.
+ 4. fetcher.ts fetches public/config/manifest.json; discovery.ts parses + validates manifest schemaVersion.
+ 5. fetcher.ts fetches public/config/profiles/<profile>.yaml (path from discovery.ts).
+ 6. loader.ts parses + profile-validates: keyspace, schemaVersion, structure, types. Hard error on any failure.
+ 7. (slice 114+) fetcher.ts fetches public/biomes/<biome>/biome.yaml; loader.ts parses + biome-validates
+        (biome keyspace + atmosphereOverrides allowlist + reserved-slot empty check).
+ 8. (slice 115+) fetcher.ts fetches public/config/worlds/<world>.yaml (name from profile.world);
+        loader.ts parses + world-validates.
+ 9. loader.ts splits each parsed tier into resolution-only keys vs. mergeable subset.
+10. loader.ts deep-merges in order: defaults ← world.mergeable ← unwrap(biome.atmosphereOverrides) ← profile.mergeable.
+        Pipeline stages whose inputs are absent (slices 113, 114) are skipped — same code path, fewer inputs.
+11. initializeConfig() awaits the sentinel promise from step 2 (it is almost certainly already resolved).
+12. (DEV only) Preflight HEAD requests against every biome texture path; warn on 404.
+13. initializeConfig() stores the resulting ViewerConfig in module-private state.
+14. App proceeds to renderer setup; existing code calls getConfig() to read values.
+        Biome-texture loads use the sentinel as their onError fallback (sentinel is now ready).
 ```
 
-Any failure in steps 3–10 throws a specific error pointing at the offending file/field/line and the viewer does **not** start. Step 11 is informational only — its warnings do not block startup, since the magenta-checker fallback handles the actual missing-texture case at render time.
+Any failure in steps 4–10 throws a specific error pointing at the offending file/field/line and the viewer does **not** start. A failure in step 11 (sentinel never loads) is also fatal — see the asset-loading-failures ADR. Step 12 is informational only — its warnings do not block startup, since the magenta-checker fallback handles the actual missing-texture case at render time.
 
 The total wire cost on a cold load is one `manifest.json`, one profile, one world, one biome YAML — four small text fetches that are sub-50ms on localhost or a CDN. The loader runs once per page load; subsequent navigation within the SPA uses the in-memory result.
 
@@ -383,7 +448,9 @@ This separation keeps each slice mechanically reviewable and independently rever
 
 ## Review Remediation
 
-The first architectural review (verdict CONCERNS, [120-review.arch.world-authoring.md](../reviews/120-review.arch.world-authoring.md), 2026-04-25) raised nine findings. This document has been revised to address each:
+### First review (2026-04-25)
+
+The first architectural review (verdict CONCERNS, [120-review.arch.world-authoring.md](../reviews/120-review.arch.world-authoring.md) at the time, model z-ai/glm-5.1) raised nine findings. The first revision of this document addressed each:
 
 | Finding | Severity | Resolution |
 |---|---|---|
@@ -396,6 +463,23 @@ The first architectural review (verdict CONCERNS, [120-review.arch.world-authori
 | F007 — Symlink/copy build strategy is a workaround | concern | Dissolved by F004's resolution: assets and YAML both live under `public/`, no symlinks needed. Risk removed. |
 | F008 — Multi-biome "schema unchanged" understated | note | New "Future-compatibility scope" section honestly distinguishes file-format compatibility (preserved) from renderer-interface compatibility (will change). |
 | F009 — `src/config.ts` triple role | note | Component Architecture splits `src/config.ts` into `types.ts` / `defaults.ts` / `index.ts` (with `getConfig()` accessor). No module-level singleton mutation. |
+
+### Second review (2026-04-25)
+
+A second review pass against the first revision (verdict CONCERNS, same review file, same model) raised ten new findings. This revision addresses each:
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| F001 — Loader interface contradicts itself (fetches vs. raw text) | concern | Module split: `loader.ts` is pure and takes raw YAML text strings; `fetcher.ts` is the only I/O module and is the "fetch and parse coordinator." Module-responsibilities section names every component and its boundary. |
+| F002 — Merge step doesn't define which keys flow into the result | concern | Tier-composition ADR now publishes per-tier mergeable-subset vs. resolution-only key tables. Resolution-only keys (`schemaVersion`, `defaultBiome`, `world`, `description`, `profile`, `biome`) never appear in `ViewerConfig`. |
+| F003 — No null/unset semantics in deep-merge | concern | Tier-composition ADR defines YAML `null` (`~`) as a deletion marker that removes the key from the accumulator. Worked-example wording added. |
+| F004 — `experiments/` has no discovery path | concern | Manifest plugin scan list now includes `public/config/experiments/`; manifest merges experiment profiles into the same `profiles` map. Name collisions are a hard plugin-time error. |
+| F005 — `atmosphereOverrides` merge is non-standard, only by example | concern | Tier-composition ADR explicitly states step (2) extracts `atmosphereOverrides` contents and merges them at the corresponding world-tier paths, discarding the wrapper. The pipeline diagram shows this as `unwrap(biome.atmosphereOverrides)`. |
+| F006 — Slice 113 must produce a valid ViewerConfig before world tier exists | concern | New "Pipeline shape across slices" table: `defaults.ts` starts holding all current hardcoded values; pipeline runs `defaults → profile` in slice 113, gains the biome stage in 114, gains the world + unwrap stages in 115. Same merge function throughout, applied to whichever inputs are present. |
+| F007 — Biome validator coupled to world schema for allowlist | concern | `ATMOSPHERE_OVERRIDE_ALLOWLIST` lives in `schema.ts` as a single shared constant referenced by both validators. New world-tier keys are an allowlist decision in one place. |
+| F008 — `manifest.json` structure undefined | note | Runtime-fetch ADR now includes a JSON example with `schemaVersion`, `profiles`, `worlds`, `biomes` maps. Each entry is a structured object (`{ "path": "..." }`) so future per-entry metadata can be added without a manifest schema bump. |
+| F009 — Hex color string format underspecified | note | Hex-colors ADR pins the grammar to `/^0x[0-9a-f]{6}$/` (lowercase, six hex digits, no alpha, no `#`). Regex is exported from `schema.ts` as `HEX_COLOR_RE`. |
+| F010 — Sentinel texture loading is async but onError assumes it's available | note | Sentinel-loading begins at `initializeConfig()` step 2 (before any biome texture load). `missing-texture.ts` exposes a `Promise<Texture>` that biome loading awaits once at startup. Sentinel load failure is fatal (build defect, not runtime condition). |
 
 ## Slice Plan Mapping
 
