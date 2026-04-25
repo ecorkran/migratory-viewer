@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createConnection } from './connection';
+import { buildSingleShotTerrain, buildTerrainChunk, buildTerrainHeader, encodeRawDtype, FRAME_2X2_F32_ZSTD } from '../protocol/_test-helpers';
+import { TerrainCompression, TerrainDtype } from '../protocol/types';
 import { createInitialViewerState } from '../types';
 
 /**
@@ -16,13 +18,16 @@ class MockWebSocket {
   onerror: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   closeCalls = 0;
+  /** Captures (code, reason) tuples for assertions on protocol-error closes. */
+  closeArgs: Array<{ code?: number; reason?: string }> = [];
 
   constructor(url: string) {
     this.url = url;
     MockWebSocket.instances.push(this);
   }
-  close(): void {
+  close(code?: number, reason?: string): void {
     this.closeCalls += 1;
+    this.closeArgs.push({ code, reason });
     this.onclose?.();
   }
   triggerOpen(): void {
@@ -155,5 +160,120 @@ describe('createConnection', () => {
     vi.advanceTimersByTime(700);
     MockWebSocket.instances[1].triggerOpen();
     expect(state.connectionStatus).toBe('connected');
+  });
+});
+
+describe('createConnection — terrain v2 integration (T12)', () => {
+  it('closes the WebSocket with code 1002 on a terrain protocol error', () => {
+    const state = createInitialViewerState();
+    const conn = createConnection(state);
+    conn.connect('ws://x');
+    const sock = MockWebSocket.instances[0];
+    sock.triggerOpen();
+    // Send a TERRAIN_CHUNK without a preceding TERRAIN_HEADER — this is a
+    // textbook tier-2 protocol violation.
+    const orphanChunk = buildTerrainChunk({
+      sequenceNumber: 0, rowOffset: 0, colOffset: 0, chunkRows: 1, chunkCols: 1,
+      isLast: true, compressedPayload: encodeRawDtype([0], TerrainDtype.F32),
+    });
+    sock.triggerMessage(orphanChunk);
+    expect(sock.closeCalls).toBe(1);
+    expect(sock.closeArgs[0].code).toBe(1002);
+    expect(sock.closeArgs[0].reason).toMatch(/without preceding TERRAIN_HEADER/);
+    // The close triggers the reconnect path (slice 101 behavior preserved).
+    expect(state.connectionStatus).toBe('reconnecting');
+  });
+
+  it('chunked terrain success populates viewerState.terrain', () => {
+    const state = createInitialViewerState();
+    const conn = createConnection(state);
+    conn.connect('ws://x');
+    const sock = MockWebSocket.instances[0];
+    sock.triggerOpen();
+    sock.triggerMessage(buildTerrainHeader({
+      rows: 2, cols: 2, resolution: 5, originX: 0, originY: 0,
+      dtype: TerrainDtype.F32, compression: TerrainCompression.NONE, chunkCount: 1,
+    }));
+    expect(state.terrain).toBeNull();
+    sock.triggerMessage(buildTerrainChunk({
+      sequenceNumber: 0, rowOffset: 0, colOffset: 0, chunkRows: 2, chunkCols: 2,
+      isLast: true, compressedPayload: encodeRawDtype([10, 20, 30, 40], TerrainDtype.F32),
+    }));
+    expect(state.terrain).not.toBeNull();
+    if (state.terrain === null) return;
+    expect(state.terrain.rows).toBe(2);
+    expect(state.terrain.cols).toBe(2);
+    expect(state.terrain.resolution).toBe(5);
+    for (let i = 0; i < 4; i++) {
+      expect(state.terrain.elevation[i]).toBeCloseTo([10, 20, 30, 40][i], 5);
+    }
+  });
+
+  it('single-shot v2 terrain populates viewerState.terrain', () => {
+    const state = createInitialViewerState();
+    const conn = createConnection(state);
+    conn.connect('ws://x');
+    const sock = MockWebSocket.instances[0];
+    sock.triggerOpen();
+    const buf = buildSingleShotTerrain({
+      rows: 2, cols: 2, resolution: 10, originX: 0, originY: 0,
+      dtype: TerrainDtype.F32, compression: TerrainCompression.ZSTD,
+      compressedPayload: FRAME_2X2_F32_ZSTD,
+    });
+    sock.triggerMessage(buf);
+    expect(state.terrain).not.toBeNull();
+    if (state.terrain === null) return;
+    expect(state.terrain.rows).toBe(2);
+    for (let i = 0; i < 4; i++) {
+      expect(state.terrain.elevation[i]).toBeCloseTo(i, 6);
+    }
+  });
+
+  it('truncated STATE_UPDATE does NOT trigger close-1002 (tier-1 preserved)', () => {
+    const state = createInitialViewerState();
+    const conn = createConnection(state);
+    conn.connect('ws://x');
+    const sock = MockWebSocket.instances[0];
+    sock.triggerOpen();
+    // Send a 3-byte buffer with STATE_UPDATE opcode — tier-1 drop, no close.
+    const truncated = new ArrayBuffer(3);
+    new DataView(truncated).setUint8(0, 0x02);
+    sock.triggerMessage(truncated);
+    expect(sock.closeCalls).toBe(0);
+    expect(state.connectionStatus).toBe('connected');
+  });
+
+  it('per-connection assembler isolation: half-finished chunked transfer does not leak across reconnect', () => {
+    const state = createInitialViewerState();
+    const conn = createConnection(state);
+    conn.connect('ws://x');
+    const sock1 = MockWebSocket.instances[0];
+    sock1.triggerOpen();
+    // Start a chunked transfer on the first connection and never finish.
+    sock1.triggerMessage(buildTerrainHeader({
+      rows: 4, cols: 4, resolution: 1, originX: 0, originY: 0,
+      dtype: TerrainDtype.F32, compression: TerrainCompression.NONE, chunkCount: 4,
+    }));
+    sock1.triggerMessage(buildTerrainChunk({
+      sequenceNumber: 0, rowOffset: 0, colOffset: 0, chunkRows: 2, chunkCols: 2,
+      isLast: false, compressedPayload: encodeRawDtype([0, 0, 0, 0], TerrainDtype.F32),
+    }));
+    // Drop the connection (server hung up mid-transfer).
+    sock1.onclose?.();
+    vi.advanceTimersByTime(700);
+    expect(MockWebSocket.instances).toHaveLength(2);
+    const sock2 = MockWebSocket.instances[1];
+    sock2.triggerOpen();
+    // Send a fresh single-shot terrain on the second connection. If the
+    // assembler from sock1 had leaked, it would be in EXPECTING_CHUNKS and
+    // reject this with a protocol error. Asserting a clean message confirms
+    // per-connection isolation.
+    sock2.triggerMessage(buildSingleShotTerrain({
+      rows: 2, cols: 2, resolution: 10, originX: 0, originY: 0,
+      dtype: TerrainDtype.F32, compression: TerrainCompression.ZSTD,
+      compressedPayload: FRAME_2X2_F32_ZSTD,
+    }));
+    expect(sock2.closeCalls).toBe(0);
+    expect(state.terrain).not.toBeNull();
   });
 });
