@@ -10,8 +10,10 @@
 
 import type { ViewerState } from '../types';
 import { applySnapshot, applyStateUpdate, applyTerrain } from '../state';
-import { parseMessage } from '../protocol/deserialize';
+import { createTerrainAssembler, type TerrainAssembler } from '../protocol/terrain-assembler';
 import { MessageType } from '../protocol/types';
+
+const PROTOCOL_ERROR_CLOSE_CODE = 1002;
 
 const INITIAL_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 30_000;
@@ -25,6 +27,7 @@ export interface Connection {
 
 export function createConnection(viewerState: ViewerState): Connection {
   let ws: WebSocket | null = null;
+  let assembler: TerrainAssembler | null = null;
   let backoffMs = INITIAL_BACKOFF_MS;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let intentionallyClosed = false;
@@ -55,14 +58,25 @@ export function createConnection(viewerState: ViewerState): Connection {
       console.warn('[net] non-ArrayBuffer message ignored');
       return;
     }
-const parsed = parseMessage(event.data);
-    if (parsed === null) return;
+    if (assembler === null) {
+      // Should be impossible: handleMessage only fires while a WebSocket is
+      // open, and connect() always creates the assembler before binding onmessage.
+      console.warn('[net] message received before assembler initialization — dropped');
+      return;
+    }
+    const out = assembler.feed(event.data);
+    if (out.kind === 'pending') return;
+    if (out.kind === 'protocol-error') {
+      console.warn(`[net] terrain protocol error: ${out.reason}`);
+      ws?.close(PROTOCOL_ERROR_CLOSE_CODE, out.reason);
+      return;
+    }
+    const parsed = out.message;
     if (parsed.type === MessageType.SNAPSHOT) {
       applySnapshot(viewerState, parsed);
       return;
     }
     if (parsed.type === MessageType.TERRAIN) {
-      console.info(`[net] TERRAIN rows=${parsed.rows} cols=${parsed.cols} resolution=${parsed.resolution}`);
       applyTerrain(viewerState, parsed);
       return;
     }
@@ -74,16 +88,6 @@ const parsed = parseMessage(event.data);
       ws?.close();
       return;
     }
-    // Debug: per-tick parsed-payload log. Uncomment to verify the server is
-    // delivering changing positions/velocities for STATE_UPDATE frames.
-    // if ((parsed.tick % 60) === 0) {
-    //   console.log(
-    //     '[debug:net] update tick', parsed.tick,
-    //     'count', parsed.entityCount,
-    //     'pos[0..3]', parsed.positions[0], parsed.positions[1], parsed.positions[2], parsed.positions[3],
-    //     'vel[0..3]', parsed.velocities[0], parsed.velocities[1], parsed.velocities[2], parsed.velocities[3],
-    //   );
-    // }
     applyStateUpdate(viewerState, parsed);
   }
 
@@ -96,6 +100,8 @@ const parsed = parseMessage(event.data);
     // Node-based consumers would need to configure their own limit separately.
     ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
+    // Per-connection assembler: reconnect implicitly resets terrain state.
+    assembler = createTerrainAssembler();
 
     ws.onopen = () => {
       console.info(`[net] connected to ${url}`);
@@ -108,6 +114,7 @@ const parsed = parseMessage(event.data);
     };
     ws.onclose = () => {
       ws = null;
+      assembler = null;
       if (intentionallyClosed) {
         viewerState.connectionStatus = 'disconnected';
         return;
@@ -125,6 +132,7 @@ const parsed = parseMessage(event.data);
       ws.close();
       ws = null;
     }
+    assembler = null;
     viewerState.connectionStatus = 'disconnected';
   }
 
