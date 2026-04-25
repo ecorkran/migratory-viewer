@@ -361,9 +361,9 @@ pnpm build                       # clean; 840 KB / 234.5 KB gzipped
 
 Bundle-size delta vs slice 111 baseline (tag `v0.0.3`): **+19 KB raw / +7.5 KB gzipped**, well under TD-4's 20 KB-gzipped target. The two added decompression libraries (`fzstd` ~10 KB, `lz4js` ~30 KB) compress favorably.
 
-### Live-server paths — DEFERRED
+### Live-server paths — RAN (PM-confirmed 2026-04-24)
 
-Live-server verification is deferred. No migratory v2 server build was available during Phase 6. The unit-level worked-example tests (T8 + T10) plus the close-1002 integration test (T12) cover protocol correctness at the unit level; live verification can be a follow-up once the migratory server has a v2 build deployable in a local development environment. To resume:
+The PM ran the viewer against the migratory v2 server build on 2026-04-24 and confirmed: terrain rendered correctly via the v2 wire path with no protocol-error logs, and the rendered output matched the slice 111 visual baseline (no rendering regressions). The procedures below are retained for future re-verification:
 
 #### Live-server single-shot path
 
