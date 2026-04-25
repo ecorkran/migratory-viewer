@@ -60,7 +60,7 @@ export function parseMessage(buffer: ArrayBuffer): ParsedMessage | null {
   }
 }
 
-function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapshot | null {
+export function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapshot | null {
   if (buffer.byteLength < SNAPSHOT_HEADER_BYTES) {
     console.warn(
       `[protocol] snapshot buffer too small for header: got ${buffer.byteLength}, need >= ${SNAPSHOT_HEADER_BYTES}`,
@@ -153,7 +153,7 @@ function parseTerrain(buffer: ArrayBuffer, view: DataView): ParsedTerrain | null
   };
 }
 
-function parseStateUpdate(buffer: ArrayBuffer, view: DataView): ParsedStateUpdate | null {
+export function parseStateUpdate(buffer: ArrayBuffer, view: DataView): ParsedStateUpdate | null {
   if (buffer.byteLength < STATE_UPDATE_HEADER_BYTES) {
     console.warn(
       `[protocol] state update buffer too small for header: got ${buffer.byteLength}, need >= ${STATE_UPDATE_HEADER_BYTES}`,
