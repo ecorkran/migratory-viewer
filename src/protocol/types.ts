@@ -3,9 +3,30 @@ export const MessageType = {
   SNAPSHOT: 0x01,
   STATE_UPDATE: 0x02,
   TERRAIN: 0x03,
+  TERRAIN_CHUNK: 0x04,
+  TERRAIN_HEADER: 0x05,
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
+
+/** Terrain payload dtype, encoded in low 2 bits of the flags byte. */
+export const TerrainDtype = {
+  F32: 0,
+  F64: 1,
+  UINT16: 2,
+} as const;
+
+export type TerrainDtypeValue = (typeof TerrainDtype)[keyof typeof TerrainDtype];
+
+/** Terrain payload compression algorithm, encoded in flags bits 2-4. */
+export const TerrainCompression = {
+  NONE: 0,
+  ZSTD: 1,
+  LZ4: 2,
+} as const;
+
+export type TerrainCompressionValue =
+  (typeof TerrainCompression)[keyof typeof TerrainCompression];
 
 /** Parsed SNAPSHOT (0x01) message. Carries world bounds and full entity state. */
 export interface ParsedSnapshot {
