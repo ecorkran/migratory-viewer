@@ -20,7 +20,7 @@ function buildSnapshot(
   const totalBytes = 25 + entityCount * 36;
   const buf = new ArrayBuffer(totalBytes);
   const view = new DataView(buf);
-  view.setUint8(0, 0x01);
+  view.setUint8(0, MessageType.SNAPSHOT);
   view.setUint32(1, tick, true);
   view.setFloat64(5, worldWidth, true);
   view.setFloat64(13, worldHeight, true);
@@ -54,7 +54,7 @@ function buildStateUpdate(
   const totalBytes = 9 + entityCount * 32;
   const buf = new ArrayBuffer(totalBytes);
   const view = new DataView(buf);
-  view.setUint8(0, 0x02);
+  view.setUint8(0, MessageType.STATE_UPDATE);
   view.setUint32(1, tick, true);
   view.setUint32(5, entityCount, true);
   let off = 9;
@@ -130,7 +130,7 @@ describe('parseSnapshot', () => {
     // Manually craft a header claiming a huge entity count.
     const buf = new ArrayBuffer(25);
     const view = new DataView(buf);
-    view.setUint8(0, 0x01);
+    view.setUint8(0, MessageType.SNAPSHOT);
     view.setUint32(1, 1, true);
     view.setFloat64(5, 100, true);
     view.setFloat64(13, 100, true);

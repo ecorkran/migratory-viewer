@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createConnection } from './connection';
 import { buildSingleShotTerrain, buildTerrainChunk, buildTerrainHeader, encodeRawDtype, FRAME_2X2_F32_ZSTD } from '../protocol/_test-helpers';
-import { TerrainCompression, TerrainDtype } from '../protocol/types';
+import { MessageType, TerrainCompression, TerrainDtype } from '../protocol/types';
 import { createInitialViewerState } from '../types';
 
 /**
@@ -41,7 +41,7 @@ class MockWebSocket {
 function buildSnapshot(tick: number, entityCount: number): ArrayBuffer {
   const buf = new ArrayBuffer(25 + entityCount * 36);
   const view = new DataView(buf);
-  view.setUint8(0, 0x01);
+  view.setUint8(0, MessageType.SNAPSHOT);
   view.setUint32(1, tick, true);
   view.setFloat64(5, 100, true);
   view.setFloat64(13, 100, true);
@@ -52,7 +52,7 @@ function buildSnapshot(tick: number, entityCount: number): ArrayBuffer {
 function buildStateUpdate(tick: number, entityCount: number): ArrayBuffer {
   const buf = new ArrayBuffer(9 + entityCount * 32);
   const view = new DataView(buf);
-  view.setUint8(0, 0x02);
+  view.setUint8(0, MessageType.STATE_UPDATE);
   view.setUint32(1, tick, true);
   view.setUint32(5, entityCount, true);
   return buf;
@@ -237,7 +237,7 @@ describe('createConnection — terrain v2 integration (T12)', () => {
     sock.triggerOpen();
     // Send a 3-byte buffer with STATE_UPDATE opcode — tier-1 drop, no close.
     const truncated = new ArrayBuffer(3);
-    new DataView(truncated).setUint8(0, 0x02);
+    new DataView(truncated).setUint8(0, MessageType.STATE_UPDATE);
     sock.triggerMessage(truncated);
     expect(sock.closeCalls).toBe(0);
     expect(state.connectionStatus).toBe('connected');
