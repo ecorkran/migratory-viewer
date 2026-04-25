@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 20260424
+
 ### Added (slice 112 — Terrain Wire Protocol v2)
 - Per-connection terrain assembler at [src/protocol/terrain-assembler.ts](src/protocol/terrain-assembler.ts) implementing the v2 wire-protocol state machine: `IDLE` ↔ `EXPECTING_CHUNKS`, with strict ordering enforcement (SNAPSHOT first, all terrain before STATE_UPDATE).
 - v2 single-shot `TERRAIN` (`0x03`) and chunked `TERRAIN_HEADER` (`0x05`) + `TERRAIN_CHUNK` (`0x04`) decode paths supporting all nine dtype × compression combinations (`f32` / `f64` / `uint16` × `none` / `zstd` / `lz4`). For `uint16` payloads, dequantization is `min + (u16 / 65535) * (max - min)` with a constant-terrain (`min == max`) special case to avoid NaN.
