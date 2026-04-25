@@ -4,7 +4,7 @@ layer: project
 reviewType: arch
 slice: world-authoring
 project: squadron
-verdict: CONCERNS
+verdict: UNKNOWN
 sourceDocument: project-documents/user/architecture/120-arch.world-authoring.md
 aiModel: z-ai/glm-5.1
 status: complete
@@ -12,96 +12,140 @@ dateCreated: 20260425
 dateUpdated: 20260425
 findings:
   - id: F001
-    severity: concern
+    severity: fail
     category: consistency
-    summary: "Loader interface contradicts itself — fetches YAML or accepts raw text?"
+    summary: "Biome mergeable subset absent from slice 115 pipeline"
   - id: F002
-    severity: concern
-    category: completeness
-    summary: "Merge step does not specify which tier keys are excluded from the ViewerConfig result"
+    severity: fail
+    category: consistency
+    summary: "Data flow step ordering contradicts the fetch dependency chain"
   - id: F003
     severity: concern
     category: completeness
-    summary: "No \"unset\" or \"null-override\" semantics in the deep-merge model"
+    summary: "Slice 114 biome selection mechanism is unspecified"
   - id: F004
     severity: concern
     category: completeness
-    summary: "`experiments/` directory has no discovery or loading path"
+    summary: "fetcher.ts has no documented mechanism to extract resolution-only keys from YAML"
   - id: F005
     severity: concern
     category: completeness
-    summary: "atmosphereOverrides merge is a non-standard operation described only by example"
+    summary: "atmosphereOverrides allowlist wildcard semantics are underspecified"
   - id: F006
     severity: concern
-    category: consistency
-    summary: "Slice 113 must produce a valid ViewerConfig without the world tier that arrives in slice 115"
+    category: completeness
+    summary: "atmosphereOverrides can introduce unrecognized fields without detection"
   - id: F007
     severity: concern
-    category: dependencies
-    summary: "Biome validator is coupled to world-tier schema structure for atmosphereOverrides allowlist"
-  - id: F008
-    severity: note
     category: completeness
-    summary: "manifest.json structure is undefined"
+    summary: "localStorage write path is unspecified"
+  - id: F008
+    severity: concern
+    category: consistency
+    summary: "resetConfig() is mentioned in risks but absent from component architecture"
   - id: F009
     severity: note
     category: completeness
-    summary: "Hex color string format is underspecified for a strict validator"
+    summary: "Schema version target is ambiguous on allowlist changes"
   - id: F010
     severity: note
     category: completeness
-    summary: "Sentinel texture loading is async but the onError contract assumes it's available"
+    summary: "Concurrent initializeConfig() calls are undefined"
 ---
 
 # Review: arch — slice 120
 
-**Verdict:** CONCERNS
+**Verdict:** UNKNOWN
 **Model:** z-ai/glm-5.1
 
 ## Findings
 
-### [CONCERN] Loader interface contradicts itself — fetches YAML or accepts raw text?
+### [FAIL] Biome mergeable subset absent from slice 115 pipeline
 
-The module-responsibility section states: **"`loader.ts` orchestrates: fetch profile YAML → validate → fetch world → validate → fetch biome → validate → deep-merge against `defaults.ts` → return the resulting `ViewerConfig`.** This describes a component that performs HTTP fetches.
+The tier-composition ADR defines the full pipeline as:
 
-The "YAML and biome assets are runtime-fetched" ADR's consequence-for-tests section states: **"The loader's API takes raw YAML text, not a URL, so the tier above (the 'fetch and parse' coordinator) is mockable trivially."** This describes a component that receives pre-fetched text, and implies a separate "coordinator" above it.
+```
+defaults ← world.mergeable ← unwrap(biome.atmosphereOverrides) ← profile.mergeable
+```
 
-No such coordinator appears in the Component Architecture's file layout or module-responsibility list. If the loader fetches, it needs `discovery.ts` as a dependency and its test interface is different than if it receives raw text. If a coordinator exists, it's an unnamed, undescribed component that owns the fetch-then-delegate flow. These two descriptions cannot both be true for the same `loader.ts`, and the choice determines the module graph and testing strategy. The document must pick one and name every component involved.
+And step 10 of the data flow restates this same order. The biome's **mergeable subset** — `surface`, `cliff`, `slopeBlend`, `props`, `audio`, `particles` (per the mergeable-subset table) — appears nowhere in this pipeline. Only the `atmosphereOverrides` extraction is shown for the biome's contribution.
 
-### [CONCERN] Merge step does not specify which tier keys are excluded from the ViewerConfig result
+An implementer following this document literally would produce a `ViewerConfig` that contains world-tier values (sky, sun, fog, terrain) and profile-tier values (camera, network, etc.) but **no biome-tier values at all** in slice 115. Surface textures, cliff textures, and slope-blend parameters would be missing from the effective config. The rendering would be broken.
 
-The merge order `defaults → world → biome.atmosphereOverrides → profile` is described as deep-merging each tier into an accumulator. But each tier YAML contains metadata and resolution keys that are not rendering parameters: `schemaVersion`, `description`, `world` (profile), `defaultBiome` (world), `biome` (biome). If the deep merge naively includes these, they leak into the `ViewerConfig` consumed by the renderer, creating an implicit coupling surface where downstream code might read `config.defaultBiome`.
+The correct pipeline must include the biome's own keyspace as a distinct merge step, e.g.:
 
-The document never states which keys are consumed-for-resolution-only vs. merged-into-the-result. The `ViewerConfig` type in `types.ts` presumably doesn't include `defaultBiome` or `schemaVersion`, but the merge step that produces a `ViewerConfig` is described as a generic deep merge — a generic deep merge would include every key. The validator's keyspace enforcement ensures a profile can't contain `sky:`, but it says nothing about stripping `defaultBiome` from the world before merge. This gap must be closed: either the merge step explicitly whitelists which keys per tier flow into the accumulator, or each tier's validator produces a "mergeable" subset stripped of metadata keys, and that subset's shape is what the merge consumes.
+```
+defaults ← world.mergeable ← biome.mergeable ← unwrap(biome.atmosphereOverrides) ← profile.mergeable
+```
 
-### [CONCERN] No "unset" or "null-override" semantics in the deep-merge model
+The merge order between `biome.mergeable` and `unwrap(biome.atmosphereOverrides)` is immaterial for correctness (they write to disjoint keyspaces — biome-tier vs. world-tier paths), but both must be shown. The slice 114 pipeline (`defaults → biome → profile`) correctly includes the biome as a whole stage; the slice 115 endpoint inexplicably drops it.
 
-The deep-merge ADR specifies that primitives replace, objects recurse, and arrays replace. There is no mechanism for a higher tier to *remove* a value set by a lower tier. If `world.yaml` sets `fog: { density: 0.5, color: "0x888888" }` and a biome wants no fog at all, there is no way to express this. Setting `density: 0` is semantically different from "no fog." YAML `null` (`fog: null` or `fog: ~`) is a real YAML value that a biome author will try; the document doesn't define whether `null` in an override means "remove this key from the accumulator" or is itself a value that overwrites (making the downstream code receive `null` instead of an object). Every layered-config system that succeeds (Kubernetes, ESLint) eventually needs a deletion marker. Deferring this means the first author who needs it will hack around it, and that hack becomes de facto behavior.
+### [FAIL] Data flow step ordering contradicts the fetch dependency chain
 
-### [CONCERN] `experiments/` directory has no discovery or loading path
+Data flow steps 7 and 8 are:
 
-The file layout lists `public/config/experiments/ — gitignored — scratch profiles for local iteration`, but no mechanism connects this directory to the discovery system. The `viteConfigManifest` plugin scans `public/config/profiles/`, `public/config/worlds/`, and `public/biomes/` — `experiments/` is not in the scan list. The `selection.ts` module resolves a profile name through the manifest. If experiment profiles aren't in the manifest, `?profile=my-experiment` will fail with "not in manifest." Either the plugin must also scan `experiments/`, or there must be a separate loading path for experiment profiles, or the directory reference should be removed until its mechanism is designed. As written, it's a feature mention with no supporting architecture.
+- **Step 7** (slice 114+): `fetcher.ts fetches public/biomes/<biome>/biome.yaml`
+- **Step 8** (slice 115+): `fetcher.ts fetches public/config/worlds/<world>.yaml`
 
-### [CONCERN] atmosphereOverrides merge is a non-standard operation described only by example
+In slice 115, both steps are active. The biome name `<biome>` comes from the world's `defaultBiome` field, which requires the world YAML to have been fetched and parsed first. But step 7 (biome fetch) is numbered before step 8 (world fetch), implying the biome is fetched first — which is impossible because the fetcher doesn't know which biome to fetch until the world is resolved.
 
-The merge step `defaults → world → biome.atmosphereOverrides → profile` includes a step that is not a standard deep merge: `biome.atmosphereOverrides` is a *biome-tier* key whose *values* are *world-tier* keys. The merge must unpack `atmosphereOverrides.sky` and merge it into the accumulator's `sky` — this is a structural transformation, not a recursive key-by-key merge of the biome config into the accumulator. The worked example shows the result, but the operational rule is never stated explicitly. An implementer reading "each `→` is a deep merge" would deep-merge the biome config (including `atmosphereOverrides` as a top-level key) into the accumulator, producing an invalid config with `atmosphereOverrides` nested inside `sky`. The document must state: step (2) extracts the contents of `atmosphereOverrides` and deep-merges them at their corresponding world-tier paths, discarding the `atmosphereOverrides` wrapper key itself.
+The correct ordering for slice 115 is: fetch profile → parse profile to get `world` name → fetch world → parse world to get `defaultBiome` name → fetch biome. The numbered steps must reflect this, or the document must explicitly note that the step numbers reflect slice introduction order, not execution order.
 
-### [CONCERN] Slice 113 must produce a valid ViewerConfig without the world tier that arrives in slice 115
+### [CONCERN] Slice 114 biome selection mechanism is unspecified
 
-The merge pipeline is defined as `defaults → world → biome.atmosphereOverrides → profile`. Slice 115 is when the world tier (sky, sun, fog) is first externalized. Slice 113 ships the loader, validators, and `getConfig()` accessor. What does the slice 113 loader merge? If it runs the full pipeline, the world and biome tiers don't exist as YAML files yet, so steps 2 and 3 of the pipeline have no inputs. If it skips them, then the slice 113 loader is a different pipeline than the slice 115 loader, and the "slice 115 adds atmosphereOverrides" framing is misleading — slice 115 actually *adds the entire world and biome merge steps*. The document needs to state what `defaults.ts` contains in slice 113 (presumably it holds all current hardcoded values including sky/sun/fog/terrain/surface), and how the loader pipeline is stubbed or simplified for slice 113, so that the slice 115 change is genuinely additive rather than a pipeline restructuring.
+The document states: "Slice 114 is allowed to be naive about which biome is active — it's whichever the world.yaml declares as `defaultBiome`." But in slice 114, there is **no world.yaml** — the world tier is still inside `defaults.ts`. The pipeline table for slice 114 says `defaults → biome → profile`, but:
 
-### [CONCERN] Biome validator is coupled to world-tier schema structure for atmosphereOverrides allowlist
+- `defaults.ts` in slice 113 contains `camera, network, performance, debug, sky, sun, fog, terrain, surface, cliff, slopeBlend` — no `defaultBiome`.
+- `defaultBiome` is a resolution-only key on the world tier.
+- The manifest lists biomes but designates no default.
+- Profiles "never pick biomes" per PM decision.
 
-The `atmosphereOverrides` allowlist (`sky.*`, `sun.*`, `fog.*`) is validated by the biome schema validator. This means the biome validator must know the structure of world-tier keys — specifically, which world-tier top-level keys exist and which are allowlisted for override. If a future slice adds a new world-tier key (e.g., `weather`), the biome validator must be updated to know about it (either to allowlist it or to reject it from `atmosphereOverrides`). This creates a hidden cross-tier dependency: the biome validator depends on the world schema. The document doesn't acknowledge this coupling or propose a structure that keeps allowlist knowledge in one place. A reasonable fix is to have the allowlist live in `schema.ts` as a shared constant referenced by both validators, rather than embedded in the biome validator alone.
+Nothing in the slice 114 design specifies how the system determines which biome to load. The `defaultBiome` resolution path (world.yaml → biome name → fetch) cannot function when world.yaml doesn't exist as a separate file. Either `defaults.ts` must gain a `defaultBiome` entry (not documented), or another selection mechanism must be specified.
 
-### [NOTE] manifest.json structure is undefined
+### [CONCERN] fetcher.ts has no documented mechanism to extract resolution-only keys from YAML
 
-The manifest is the central discovery artifact — the browser fetches it to resolve names to paths — but its JSON schema is never shown. The Vite plugin "writes `public/config/manifest.json` listing the discovered names and their YAML paths" is the only specification. The manifest's shape determines how `discovery.ts` resolves names and how errors are reported when a name is missing. A two-line JSON example would close this gap.
+`fetcher.ts` must resolve the fetch chain: profile name → profile YAML → `world` key → world YAML → `defaultBiome` key → biome YAML. The `world` and `defaultBiome` values are resolution-only keys that the ADR says "never appear in `ViewerConfig`." But `loader.ts`'s public API takes raw YAML strings and returns a `ViewerConfig` — the resolution-only keys are consumed internally and discarded.
 
-### [NOTE] Hex color string format is underspecified for a strict validator
+The document does not describe how `fetcher.ts` obtains `world` from the profile or `defaultBiome` from the world. Three options exist, none documented:
 
-The document commits to strict type validation and says colors are hex strings like `"0x1a3d1a"`. But the exact format is ambiguous: is `"0x1A3D1A"` valid (uppercase)? Is `"0x1a3d1aff"` valid (8-char with alpha)? Is `"#1a3d1a"` valid? A strict validator must accept or reject these deterministically. Since the validator is the type-system-at-the-boundary, the hex-color grammar should be specified — a regex pattern or a parsing rule.
+1. `fetcher.ts` parses YAML itself to extract these keys (duplicating `loader.ts`'s parse logic).
+2. `loader.ts` exposes a separate per-tier parse-and-validate function that returns both the mergeable subset and the resolution-only keys.
+3. `loader.ts`'s main function returns a tuple of `(ViewerConfig, resolutionKeys)` instead of just `ViewerConfig`.
 
-### [NOTE] Sentinel texture loading is async but the onError contract assumes it's available
+Whichever approach is chosen affects `loader.ts`'s interface and `fetcher.ts`'s implementation. The current spec leaves this to the implementer to discover.
 
-`missing-texture.ts` owns a "single shared `Texture` instance" loaded from `public/assets/missing-texture.png`. Three.js's `TextureLoader` is async. If a biome texture fails to load before the sentinel texture has finished loading, the `onError` handler would reference an unloaded or partially-loaded texture. The document doesn't address this race: the sentinel should be loaded eagerly (before any biome textures) and its readiness should gate the biome-texture loading, or the onError handler must handle the case where the sentinel itself isn't ready.
+### [CONCERN] atmosphereOverrides allowlist wildcard semantics are underspecified
+
+The allowlist uses `sky.*`, `sun.*`, `fog.*` notation, but the wildcard matching semantics are never defined:
+
+- Does `sky.*` match only direct children of `sky` (e.g., `sky.hemisphereSkyColor`) or any depth (e.g., `sky.nested.sub.field`)?
+- Is `*` a glob pattern, a regex, or a convention?
+- Does `sky.*` match `sky` itself (the whole sub-object)?
+
+The `ATMOSPHERE_OVERRIDE_ALLOWLIST` constant in `schema.ts` must implement concrete matching logic, but the document gives no specification for what that logic should be. If two implementers interpret `sky.*` differently (one as single-level, one as recursive), the validator's behavior diverges silently.
+
+### [CONCERN] atmosphereOverrides can introduce unrecognized fields without detection
+
+The allowlist validates that an override path falls under an allowed prefix (e.g., `sky.*`), but does not validate that the specific leaf field exists in the world schema. A biome that writes `atmosphereOverrides: { sky: { hemisphereSkyColro: "0x4a3a1a" } }` (typo: `Colro` instead of `Color`) would pass the allowlist check (it's under `sky.*`) and deep-merge a useless key into the effective config. The typo is invisible at load time and the override silently does nothing — precisely the failure mode the "strict schema validation" ADR is designed to prevent for all other YAML fields.
+
+The document states "Unknown fields anywhere in the document are also a hard error," but this principle is not applied inside `atmosphereOverrides` — only the prefix is checked, not the field names. The biome validator should cross-reference override leaf keys against the world schema's known fields under each allowlisted path.
+
+### [CONCERN] localStorage write path is unspecified
+
+The selection cascade reads from `localStorage.getItem('migratory.profile')`, and the document justifies it: "Falling back to localStorage.getItem('migratory.profile') lets a stable choice persist across sessions." But nothing in the document describes what writes to this key. The URL `?profile=` parameter is described as read-only. No UI, no API call, no automatic persistence on profile selection is documented.
+
+Without a write path, `localStorage.getItem('migratory.profile')` always returns `null`, making the entire localStorage fallback dead code. If the intent is that future work will populate it, that should be stated explicitly. If something writes to it today, the write mechanism must be specified.
+
+### [CONCERN] resetConfig() is mentioned in risks but absent from component architecture
+
+The Risks section states: "provide a test-only `resetConfig()` export that clears the stored result; document its use in the loader's test file." But the Component Architecture's file layout and module-responsibilities sections do not mention `resetConfig()` anywhere. It's unclear whether it lives in `index.ts`, in a separate test utility file, or elsewhere. Its export strategy (conditionally exported? always exported but documented as test-only?) is also unspecified.
+
+Since this function mutates the module-private state that `getConfig()` reads, its placement and visibility are load-bearing for test isolation — the exact problem the risk section identifies.
+
+### [NOTE] Schema version target is ambiguous on allowlist changes
+
+The document states: "Adding a new path to the allowlist requires a versioned schema migration (`schemaVersion: 1` → `2`)." But it doesn't specify **which tier's** `schemaVersion` must be bumped. The biome's `schemaVersion` (the tier that writes atmosphereOverrides) is the natural candidate, since new paths enable new content in biome files. But the world's schema is also affected (new overridable paths mean new world-tier fields that can be overridden). The document should specify which file's version increments, or state that both must bump.
+
+### [NOTE] Concurrent initializeConfig() calls are undefined
+
+`initializeConfig()` is described as "called once during app boot," but no guard exists against it being called while already in progress (e.g., due to a race in app initialization code). If called twice concurrently, two fetch pipelines would run and the second would overwrite the first's result — or worse, the module-private state could be in a partially-written state. A simple guard (e.g., returning the existing promise if already called) would eliminate this, but the document doesn't specify the expected behavior.
