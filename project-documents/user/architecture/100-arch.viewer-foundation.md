@@ -8,7 +8,7 @@ initiative: 100
 initiativeName: viewer-foundation
 source: user/project-guides/001-initiative-plan.migratory-viewer.md
 dateCreated: 20260405
-dateUpdated: 20260422
+dateUpdated: 20260424
 status: in_progress
 archIndex: 100
 component: viewer-foundation
@@ -73,20 +73,34 @@ The WebGPU path also unlocks compute shaders for future performance work (slice 
 **Protocol summary:**
 - **SNAPSHOT (0x01):** `[u8 type | u32 tick | f64 width | f64 height | u32 count | f64[N×2] positions | f64[N×2] velocities | i32[N] profile_indices]` — 25 + N×36 bytes
 - **STATE_UPDATE (0x02):** `[u8 type | u32 tick | u32 count | f64[N×2] positions | f64[N×2] velocities]` — 9 + N×32 bytes
+- **TERRAIN (0x03):** v2 single-shot terrain frame. Header carries `rows`, `cols`, `resolution`, `originX`, `originY`, then a flags byte (dtype + compression + reserved bits), optionally `elevation_min`/`elevation_max` for `uint16` dequantization, then a (possibly compressed) elevation payload. Full byte layout, dtype/compression encodings, and the protocol-error catalog live in [project-documents/reference/terrain-wire-protocol-v2.md](../../reference/terrain-wire-protocol-v2.md). Slice 112 implements the v2 decode path.
+- **TERRAIN_HEADER (0x05) + TERRAIN_CHUNK (0x04):** chunked terrain delivery. `TERRAIN_HEADER` declares the same metadata as a single-shot `TERRAIN` plus an `expected_chunks` count; each `TERRAIN_CHUNK` carries a 22-byte header with `sequence_number`, `row_offset`, `col_offset`, `chunk_rows`, `chunk_cols`, `last_chunk_flag` plus a (possibly compressed) sub-rectangle payload. Reassembly is offset-driven, not arrival-driven. See the captured spec.
+
+**Opcode versioning convention.** The migratory wire protocol does not carry a version field. Versioning is encoded in the opcode itself: an opcode's *meaning* (which message type it represents) is stable forever. Additive, backward-tolerant changes to a payload — such as the v2 flags byte appended after the existing v1 fixed header on `0x03 TERRAIN` — preserve the opcode. A *behaviorally incompatible* change (e.g. a new message type with different framing or semantics) gets a new opcode (as `0x04` and `0x05` did when chunked delivery was added). All opcode comparisons in viewer code go through the `MessageType` const table in `protocol/types.ts`; raw hex literals (`0x03`, etc.) outside that definition are forbidden.
 
 ### Protocol Error Handling
 
-**Decision:** Validate at parse boundaries; discard malformed frames without disconnecting.
+**Decision:** Validate at parse boundaries. Recovery is two-tiered: malformed **stateless, per-tick** messages are logged and discarded without disconnecting; malformed **stateful or one-shot** messages where continuing would risk corrupt rendering state close the WebSocket with code 1002 (protocol error) and rely on the existing reconnect path to re-handshake.
 
 **Rationale:** The binary protocol uses computed byte offsets — a truncated message or corrupted count field could cause `DataView` reads or typed array views to access invalid buffer ranges. The deserialization layer must validate before wrapping.
 
-**Validation rules:**
-1. **Message type byte:** Reject unknown values (not 0x01 or 0x02). Log the byte value and discard the frame.
-2. **Buffer length vs. claimed entity count:** After reading the header, verify that the remaining buffer length matches `entity_count × expected_bytes_per_entity`. If it doesn't, discard the frame and log the mismatch.
-3. **Entity count sanity:** Reject entity counts exceeding a configurable upper bound (e.g., 200,000). This guards against corrupted count fields that would cause massive typed array allocations.
-4. **Endianness:** All `DataView` reads must pass `true` for the `littleEndian` parameter. This is a coding discipline requirement (DataView defaults to big-endian if omitted), enforced via the deserialization module's internal API.
+The two tiers reflect a meaningful difference in blast radius:
 
-**Recovery behavior:** On any validation failure, log a warning with the failure reason and raw byte context, then discard the frame. Do not disconnect — a single corrupted frame on an otherwise healthy connection is not worth a full reconnect cycle. If multiple consecutive frames fail validation, the connection is likely broken; the existing reconnect logic (connection close event) will handle it.
+- **Stateless, per-tick frames (`SNAPSHOT 0x01`, `STATE_UPDATE 0x02`).** Each frame is independent of the previous; a fresh `STATE_UPDATE` arrives next tick. Dropping a single corrupted frame is self-healing — the user sees one missed tick (~16 ms at 60 Hz). A reconnect would cost hundreds of ms of backoff plus a fresh `SNAPSHOT` re-handshake to recover from the same condition. Skip-and-continue is the right call.
+- **Stateful or one-shot frames (`TERRAIN 0x03`, `TERRAIN_HEADER 0x05`, `TERRAIN_CHUNK 0x04`).** Terrain is sent once per connection and gates rendering correctness. The chunked path (`0x05` + N × `0x04`) maintains a state machine that spans messages; a malformed chunk in the middle of an in-flight terrain transfer cannot be skipped without leaving the assembler in a half-applied state, where some grid cells come from one transfer and others from a stale earlier one. Close-1002 + reconnect is the only safe recovery: the next connection re-runs SNAPSHOT → terrain → STATE_UPDATE from a clean state.
+
+**Validation rules:**
+1. **Message type byte:** Reject leading bytes that do not match a known opcode in the `MessageType` const table. For `0x01`/`0x02`, log and discard. For an unknown byte received where a terrain frame was expected (i.e. mid–chunked-delivery), close 1002. For an unknown byte at any other point, the implementation may discard or close — the slice 112 design takes the conservative "close 1002 on unknown opcode" path.
+2. **Buffer length vs. claimed count.** After reading the header, verify the remaining buffer length matches the expected payload size. Tier-1: discard. Tier-2: close 1002.
+3. **Entity count sanity.** Reject entity counts exceeding a configurable upper bound (e.g., 200,000). This guards against corrupted count fields that would cause massive typed array allocations. Tier-1.
+4. **Endianness.** All `DataView` reads must pass `true` for the `littleEndian` parameter. This is a coding discipline requirement (DataView defaults to big-endian if omitted), enforced via the deserialization module's internal API.
+5. **Terrain protocol errors.** The full catalog (reserved-flag-bit set, unknown dtype, unknown compression, out-of-state chunk, decoder failure, coverage-validation failure, terrain frame received after `STATE_UPDATE` started) lives in [project-documents/reference/terrain-wire-protocol-v2.md](../../reference/terrain-wire-protocol-v2.md). Each is a tier-2 close-1002. The lone exception is a duplicate `sequence_number` with identical chunk coordinates, which is recoverable: log a warning and continue (last-write-wins per spec).
+
+**Tier-1 recovery behavior:** Log a warning with the failure reason and raw byte context, discard the frame, do not disconnect. If multiple consecutive frames fail validation, the connection is likely broken; the existing reconnect logic (connection close event) will handle it.
+
+**Tier-2 recovery behavior:** Log a warning with the failure reason, call `ws.close(1002, reason)`, dispose the per-connection terrain assembler, let the existing reconnect-with-backoff path re-handshake. The next connection re-runs the full protocol from a clean state. The server does not attempt in-stream re-synchronization, so close-and-reconnect is the only correct recovery.
+
+**Scope of tier-2 today.** Slice 112 introduces tier-2 close-1002 for *terrain opcodes only*. `SNAPSHOT` and `STATE_UPDATE` keep their original tier-1 behavior unchanged. Promoting entity-state errors to tier-2 would be a separate behavioral change with its own test coverage and is deliberately deferred — see slice 112 TD-7.
 
 ### Terrain via TERRAIN (0x03)
 
@@ -118,8 +132,10 @@ The WebGPU path also unlocks compute shaders for future performance work (slice 
 src/
 ├── main.ts                 # Entry point: init scene, connect WebSocket, start render loop
 ├── protocol/
-│   ├── types.ts            # Message types, parsed state interfaces
-│   └── deserialize.ts      # Binary protocol parsing (DataView + typed array views)
+│   ├── types.ts            # Message types, parsed state interfaces, dtype/compression const tables
+│   ├── deserialize.ts      # Stateless parsing for SNAPSHOT (0x01) and STATE_UPDATE (0x02)
+│   ├── terrain-assembler.ts # Per-connection state machine for TERRAIN (0x03) and chunked (0x05 + 0x04)
+│   └── decompress.ts       # zstd/lz4 frame decompression dispatch (slice 112)
 ├── net/
 │   └── connection.ts       # WebSocket lifecycle: connect, reconnect, status
 ├── rendering/
@@ -150,8 +166,11 @@ interface ViewerState {
   velocities: Float64Array | null;      // updated each tick
   currentTick: number;
   connectionStatus: ConnectionStatus;
+  terrain: TerrainGrid | null;          // from TERRAIN (slice 102); null until first TERRAIN arrives
 }
 ```
+
+(`TerrainGrid` carries `rows`, `cols`, `resolution`, `originX`, `originY`, and a row-major `Float64Array` elevation grid. The shape is identical for the slice 102 v1 path and the slice 112 v2 path — the protocol-layer change does not propagate into `ViewerState`.)
 
 **Ownership rules:**
 - `net/connection.ts` is the sole writer — it updates `ViewerState` after deserializing each message.
@@ -165,14 +184,27 @@ This avoids both a framework dependency and implicit state scattered across comp
 
 ```
 WebSocket binary frame
-  → protocol/deserialize.ts: parse type byte, extract header, wrap array sections
-  → net/connection.ts: dispatch to snapshot handler or update handler
-  
+  → protocol/terrain-assembler.feed(buffer): per-connection state machine
+      ├── 0x01 / 0x02 → delegate to protocol/deserialize.ts (stateless)
+      └── 0x03 / 0x04 / 0x05 → in-assembler terrain decode
+                                 (decompress via protocol/decompress.ts,
+                                  dtype-decode, optional dequantize,
+                                  reassemble chunked grids)
+      → returns {kind: 'message' | 'pending' | 'protocol-error'}
+  → net/connection.ts: switch on output kind
+      ├── 'message'        → dispatch to per-opcode handler
+      ├── 'pending'        → no-op (chunked terrain mid-flight, or tier-1 dropped frame)
+      └── 'protocol-error' → ws.close(1002, reason); reconnect path takes over
+
 Snapshot (0x01):
   → Store world bounds, profile indices
   → rendering/terrain.ts: set ground plane scale from world bounds
   → rendering/entities.ts: allocate InstancedMesh for entity_count, set initial matrices
   → ui/hud.ts: update entity counts, profile breakdown
+
+Terrain (0x03 single-shot, or 0x05 + 0x04* chunked):
+  → ViewerState.terrain populated with the assembled TerrainGrid
+  → rendering/terrain.ts: rebuild displaced mesh from elevation grid
 
 State Update (0x02):
   → rendering/entities.ts: update InstancedMesh matrices from new positions/velocities
@@ -232,7 +264,11 @@ The viewer can begin immediately — all required server infrastructure is opera
 
 - **Three.js** (r183+) via `three/webgpu` — 3D rendering with WebGPURenderer and automatic WebGL 2 fallback
 - **Vite** (6+) — Build tooling and dev server (requires Node.js ≥ 20.19)
-- No other runtime dependencies in v1. Type definitions are bundled with `three` since r152 — no separate `@types/three` needed.
+- **fzstd** — pure-JS zstd Frame decoder (slice 112). Decodes the v2 terrain wire protocol's zstd-compressed payloads. Sync `Uint8Array → Uint8Array` API; ~10 KB minified.
+- **lz4js** — pure-JS LZ4 Frame decoder (slice 112). Decodes the v2 terrain wire protocol's lz4-compressed payloads. Sync `Uint8Array → Uint8Array` API; ~30 KB minified.
+- Type definitions are bundled with `three` since r152 — no separate `@types/three` needed.
+
+**Dependency policy.** Runtime dependencies are added only when (a) required by an external protocol the viewer must consume (e.g. compression algorithms declared in the server-emitted flags byte), or (b) replacing an in-house implementation would meaningfully reduce risk. The original architecture's "no other runtime dependencies in v1" line dated to before the v2 terrain wire protocol introduced compression; that constraint is superseded by the additions above. Any further runtime dependency requires an architecture amendment with the same level of justification.
 
 ## Performance Targets
 
@@ -264,5 +300,6 @@ The slice plan (`100-slices.viewer-foundation.md`) decomposes this architecture 
 | 109 — Biome Rendering | Biome-id coloring atop terrain | Biome rendering (gated on migratory slice 502 + its wire extension) |
 | 110 — Terrain Surface Material | TSL node material with slope-based surface/cliff blending; `BiomeConfig` in config.ts for swappable biome appearance; PBR lighting upgrade | Terrain rendering, material system |
 | 111 — Terrain Slab and Texture | Geological slab depth (side walls + bottom); texture maps on surface material via `BiomeConfig`; triplanar UV sampling in TSL | Terrain rendering, material system |
+| 112 — Terrain Wire Protocol v2 | v2 single-shot `0x03` and chunked `0x05` + `0x04` decode; `fzstd` + `lz4js` decompression; per-connection assembler with tier-2 close-1002 error policy; renderer-facing `ParsedTerrain` shape preserved | Protocol layer (new `terrain-assembler.ts`, `decompress.ts`); two-tier error policy |
 
 The slice plan's implementation order, dependencies, and success criteria remain authoritative. This architecture document provides the structural rationale and component design that the slice plan implements.
