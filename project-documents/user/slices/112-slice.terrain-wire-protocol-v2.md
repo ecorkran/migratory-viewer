@@ -6,7 +6,7 @@ slice: "112"
 sliceName: terrain-wire-protocol-v2
 dateCreated: 20260424
 dateUpdated: 20260424
-status: not_started
+status: complete
 ---
 
 # Slice 112: Terrain Wire Protocol v2 (Chunked + Compressed)
@@ -319,35 +319,65 @@ Protocol errors log one WARN line with the reason that goes into the close frame
 8. No raw opcode hex literals (`0x03`, `0x04`, `0x05`) in dispatch, parsers, tests, or logs outside the `MessageType` const definition itself. Same for `TerrainDtype` and `TerrainCompression` field-value comparisons.
 9. `pnpm tsc --noEmit`, `pnpm test --run`, and `pnpm build` all pass.
 
-## Verification Walkthrough (Draft — refined in Phase 6)
+## Verification Walkthrough
 
-This walkthrough assumes a migratory server with the v2 terrain wire spec merged, configured to produce a non-trivial terrain layer and exercise both single-shot and chunked paths.
+This walkthrough captures what was actually run during Phase 6. The unit-level paths (worked-example tests + connection-layer integration) are runnable and reproducible by any agent (human or AI) without access to a live v2 server. The live-server paths are documented for future verification once a v2 server build is available.
 
-### Hand-rolled ground-truth test (no live server required)
+### Unit-level ground-truth (no live server required) — RAN
 
-1. Construct the spec's exact 38-byte `0x03` worked example as a `Uint8Array` literal in a unit test, including the zstd-compressed payload of `[0.0, 1.0, 2.0, 3.0]` as f32 LE.
-2. Feed it into a fresh assembler:
-   ```typescript
-   const assembler = createTerrainAssembler();
-   const out = assembler.feed(workedExampleBuffer);
-   ```
-3. Assert `out.kind === 'message'`, `out.message.type === MessageType.TERRAIN`, `out.message.rows === 2`, `out.message.cols === 2`, and `out.message.elevation` equals `Float64Array.of(0, 1, 2, 3)` within f32 precision.
+The single-shot 2×2 worked example and the chunked 4×2 worked example from the captured reference are both pinned as unit tests. Run from the repo root:
 
-This is the single fastest test for catching endianness, header-offset, dequant, and compression-frame errors.
+```bash
+pnpm test --run src/protocol/terrain-assembler.test.ts
+pnpm test --run src/protocol/terrain-assembler-chunked.test.ts
+```
 
-### Live-server single-shot path
+Expected output (representative — totals match commit `8b80748`):
+- `terrain-assembler.test.ts`: 24 passed (5 skeleton + 19 single-shot)
+- `terrain-assembler-chunked.test.ts`: 23 passed (chunked worked-example, 9 dtype×compression combos in chunked form, plus 13 protocol-error/state-machine cases)
+
+The single-shot worked-example test (T8 — "decodes the spec 2×2 f32+zstd worked example exactly") and the chunked worked-example test (T10 — "decodes the spec chunked worked example exactly (header + chunk0 + chunk1)") each construct the spec's exact byte sequence as `Uint8Array` literals from the captured reference and assert the assembler produces the expected `Float64Array`. These two tests are the protocol-correctness gate: if both pass, decode is correct.
+
+### Connection-layer integration — RAN
+
+```bash
+pnpm test --run src/net/connection.test.ts
+```
+
+Expected: 13 passed. Five new cases added in T12 cover:
+- Close-1002 on terrain protocol error (orphan TERRAIN_CHUNK without preceding TERRAIN_HEADER)
+- Renderer state populated on chunked-terrain success
+- Renderer state populated on single-shot v2 terrain success
+- Truncated STATE_UPDATE does **not** trigger close-1002 (tier-1 preserved)
+- Per-connection assembler isolation across reconnect
+
+### Full quality gates — RAN
+
+```bash
+pnpm tsc --noEmit                # clean
+pnpm test --run                  # 121 passed (was 71 at start of slice 112; +50)
+pnpm build                       # clean; 840 KB / 234.5 KB gzipped
+```
+
+Bundle-size delta vs slice 111 baseline (tag `v0.0.3`): **+19 KB raw / +7.5 KB gzipped**, well under TD-4's 20 KB-gzipped target. The two added decompression libraries (`fzstd` ~10 KB, `lz4js` ~30 KB) compress favorably.
+
+### Live-server paths — DEFERRED
+
+Live-server verification is deferred. No migratory v2 server build was available during Phase 6. The unit-level worked-example tests (T8 + T10) plus the close-1002 integration test (T12) cover protocol correctness at the unit level; live verification can be a follow-up once the migratory server has a v2 build deployable in a local development environment. To resume:
+
+#### Live-server single-shot path
 
 1. Start the migratory server with `terrain_wire.compression: zstd`, `dtype: f64`, no chunking. Confirm the server log shows the v2 single-shot path.
-2. Open the viewer; confirm the console shows exactly one `[net] TERRAIN rows=R cols=C resolution=X dtype=f64 compression=zstd chunks=1 bytes_compressed=BC bytes_decompressed=BD` line, with `BC < BD` (compression actually ran).
+2. Open the viewer at `pnpm dev`; confirm the browser console shows exactly one `[net] TERRAIN rows=R cols=C resolution=X dtype=f64 compression=zstd chunks=1 bytes_compressed=BC bytes_decompressed=BD` line, with `BC < BD` (compression actually ran).
 3. Confirm the rendered terrain matches the slice 102 / 111 visual baseline (no rendering changes).
 
-### Live-server chunked path
+#### Live-server chunked path
 
-1. Restart the server with chunking thresholds set so the production terrain payload chunks into ≥ 4 pieces (server config exact knob TBD by the migratory team).
+1. Restart the server with chunking thresholds set so the production terrain payload chunks into ≥ 4 pieces.
 2. Open the viewer; confirm the console log shows `chunks=N` with `N ≥ 4`, the rendered terrain still matches the visual baseline, and no protocol-error logs appear.
 3. Inspect the WebSocket frames in browser devtools (Network → WS → Frames). Confirm one `0x05` frame followed by N `0x04` frames before any `0x02` frame appears.
 
-### Protocol-error path
+#### Protocol-error path
 
 1. Add a temporary server debug hook (or use a WebSocket fuzzer) to:
    - Send a `0x03` frame with reserved flag bit 5 set → expect `[net] terrain protocol error: reserved flag bits set` and the socket closes with code 1002, then reconnects.
@@ -355,9 +385,14 @@ This is the single fastest test for catching endianness, header-offset, dequant,
    - Send a chunked terrain that omits one chunk → expect coverage-validation protocol error after the last-flag chunk.
 2. After each closure, confirm the existing reconnect-with-backoff path runs (slice 101 behavior), and that the next connection's terrain renders normally.
 
-### Solid-color / fallback verification
+#### Solid-color / fallback verification
 
 1. Restart the server with `terrain_wire.compression: none` and `dtype: f32` (the simplest combination). Confirm the viewer renders identically — the visual outcome is independent of compression and dtype.
+
+### Caveats discovered during implementation
+
+- **`lz4js` content-size flag bug.** During T4, the `lz4js` v0.2.0 `decompressBound` function was found to mishandle the optional 64-bit content-size field in LZ4 Frame descriptors (JS bit-shift `<< 32` wraps mod 32, producing a sign-extended garbage size and a `RangeError: Invalid array length`). The remediation was to coordinate with the migratory server team to emit LZ4 frames with `content_size=False` and `content_checksum=False`. This constraint is now documented in [project-documents/reference/terrain-wire-protocol-v2.md](../../reference/terrain-wire-protocol-v2.md#compression-frame-formats). Frames without content-size decode correctly. If a future server build needs to re-enable content-size, coordinate a viewer-side decoder swap first (TD-4 names `lz4-wasm` as the documented WASM fallback).
+- **Test fixtures are pre-baked.** `fzstd` is decode-only, and `lz4js`'s frame compressor doesn't reliably match the descriptor we expect. Test fixtures (compressed frame bytes for the worked examples and the 9-combo round-trips) are pre-generated via the system `zstd` and `lz4` CLIs and inlined as `Uint8Array` constants in [src/protocol/_test-helpers.ts](../../src/protocol/_test-helpers.ts). Each fixture includes a comment recording the exact CLI command used. The 2×2 worked-example zstd fixture is byte-identical to the one in the spec's captured reference.
 
 ## Open Questions — Resolved
 

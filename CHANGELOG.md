@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (slice 112 — Terrain Wire Protocol v2)
+- Per-connection terrain assembler at [src/protocol/terrain-assembler.ts](src/protocol/terrain-assembler.ts) implementing the v2 wire-protocol state machine: `IDLE` ↔ `EXPECTING_CHUNKS`, with strict ordering enforcement (SNAPSHOT first, all terrain before STATE_UPDATE).
+- v2 single-shot `TERRAIN` (`0x03`) and chunked `TERRAIN_HEADER` (`0x05`) + `TERRAIN_CHUNK` (`0x04`) decode paths supporting all nine dtype × compression combinations (`f32` / `f64` / `uint16` × `none` / `zstd` / `lz4`). For `uint16` payloads, dequantization is `min + (u16 / 65535) * (max - min)` with a constant-terrain (`min == max`) special case to avoid NaN.
+- Decompression dispatcher at [src/protocol/decompress.ts](src/protocol/decompress.ts) wrapping `fzstd` (zstd RFC 8478 frames) and `lz4js` (LZ4 Frame format). `none` returns the input unchanged; decoder failures are wrapped in a `TypeError` prefixed `terrain decompress: <algorithm> failed: …`.
+- `TERRAIN_CHUNK = 0x04` and `TERRAIN_HEADER = 0x05` opcodes added to `MessageType`; new `TerrainDtype` and `TerrainCompression` const-as-object tables.
+- Tier-2 protocol-error policy for terrain opcodes — reserved-bit set, unknown dtype/compression, out-of-state chunk, missing/duplicate/overlapping chunks, decoder failure, and length mismatches all close the WebSocket with code 1002 rather than the slice-101 log-and-skip pattern. SNAPSHOT and STATE_UPDATE retain their tier-1 (log + drop) behavior.
+- Per-terrain-transfer INFO log line: `[net] TERRAIN rows=R cols=C resolution=X dtype=DT compression=COMP chunks=N bytes_compressed=BC bytes_decompressed=BD`.
+- 50 new unit tests across `types.test.ts`, `decompress.test.ts`, `terrain-assembler.test.ts`, `terrain-assembler-chunked.test.ts`, and additions to `connection.test.ts`. Includes the spec's exact 2×2 worked example (single-shot) and 4×2 worked example (chunked) as ground-truth byte sequences.
+
+### Changed (slice 112)
+- [src/net/connection.ts](src/net/connection.ts) `handleMessage` now routes through a per-`connect()` assembler instance: `assembler.feed(buffer)` returns a discriminated union (`message` | `pending` | `protocol-error`); on `protocol-error` the WebSocket closes with code 1002 and the existing reconnect-with-backoff path runs. Per-connection assembler creation guarantees no chunked-state leak across reconnects.
+- [src/protocol/deserialize.ts](src/protocol/deserialize.ts) `parseMessage` no longer dispatches on `TERRAIN` (`0x03`); terrain decode is now exclusively assembler-routed. The slice 102 v1 single-shot terrain parser and its test suite have been removed (replaced by v2 tests with full byte-layout coverage).
+
+### Dependencies (slice 112)
+- Added `fzstd@0.1.1` (~10 KB pure-JS zstd decoder).
+- Added `lz4js@0.2.0` (~30 KB pure-JS LZ4 Frame decoder). Server-side LZ4 frames must be emitted with `content_size=False` and `content_checksum=False` (descriptor `0x60` family) — `lz4js` v0.2.0 has a bit-shift bug in its content-size handling. Constraint documented in [project-documents/reference/terrain-wire-protocol-v2.md](project-documents/reference/terrain-wire-protocol-v2.md).
+- Bundle delta vs slice 111 (tag `v0.0.3`): +19 KB raw / +7.5 KB gzipped. Within TD-4's 20 KB-gzipped target.
+
 ## [0.7.0] - 20260424
 ### Added
 - Geological slab beneath the terrain — four side walls tracking the terrain edge elevation profile plus a bottom face, unified with the top surface as a single closed indexed `BufferGeometry` in `terrain.ts`. Walls render as pure cliff appearance via the existing slope-blend (`normalWorld.y ≈ 0` resolves below `slopeBlendLow`).
