@@ -80,6 +80,7 @@ The client may rely on the following ordering guarantees from the server:
 
 - **zstd** payloads are **standard zstd frames** (RFC 8478, magic `0x28 B5 2F FD`). No dictionary. Any compliant zstd decoder (e.g. `fzstd` or a WASM build of `libzstd`) consumes them as-is.
 - **lz4** payloads are **LZ4 Frame format** (magic `0x04 22 4D 18`), *not* raw LZ4 block format. Use a frame-capable decoder (e.g. `lz4js`, or WASM `lz4-wasm` in frame mode).
+  - **Server constraint (locked 2026-04-24):** LZ4 frames are emitted with `content_size=False` and `content_checksum=False` (frame descriptor `0x60` family, no optional 8-byte content-size field). This is required because `lz4js` v0.2.0 — the viewer's chosen pure-JS decoder — has a bug in `decompressBound` where it mishandles the 64-bit content-size header (JS bit-shift wraps mod 32), causing `RangeError: Invalid array length`. Frames without content-size decode correctly. If a future server build needs to re-enable content-size, coordinate a viewer-side decoder swap first.
 - **none** means the payload bytes are the raw dtype-cast elevation array; no decoder step.
 
 Server choice is declared in the flags byte of the preceding `TERRAIN` (single-shot) or `TERRAIN_HEADER` (chunked) message — the client must not assume an algorithm across connections; server config can change.
