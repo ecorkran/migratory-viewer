@@ -8,7 +8,7 @@ initiative: 120
 initiativeName: world-authoring
 source: user/project-guides/001-initiative-plan.migratory-viewer.md
 dateCreated: 20260425
-dateUpdated: 20260425
+dateUpdated: 20260501
 status: in_progress
 reviewLog:
   - 20260425 — first review (verdict CONCERNS, model z-ai/glm-5.1) at project-documents/user/reviews/120-review.arch.world-authoring.md. Findings F001-F009 addressed in first revision; see "Review Remediation" section below.
@@ -25,7 +25,7 @@ component: world-authoring
 
 Initiative 120 externalizes the viewer's visual configuration from compiled TypeScript into versioned YAML files, organized into three composable tiers. The goal is content velocity: editing a biome's color or swapping a texture should not require a code change, a build, or a code review. A second goal is *anticipating expansion* — the eventual immersive world will have many biomes (Minecraft-comparable count), each potentially with 3D props, audio, and per-region atmosphere overrides. The schema established here must scale from "one texture, nothing else" up to that endpoint without requiring a breaking redesign.
 
-This is mechanical infrastructure work. No rendering algorithms change in slices 113–115; only the *source* of the parameters those algorithms already consume.
+This is mechanical infrastructure work. No rendering algorithms change in slices 121–123; only the *source* of the parameters those algorithms already consume.
 
 ## System Context
 
@@ -117,7 +117,7 @@ result:      sky: { hemisphereSkyColor: "0x1a1a4e",   ← from world (unchanged)
 
 Authors do not have to repeat every field of a nested object to change one value. Adding a new sub-field to a world-tier nested object does not silently break biome overrides — overrides target leaf paths, not whole sub-objects.
 
-**`atmosphereOverrides` has a fixed, narrow allowlist of overridable world-tier roots.** As of slice 115, the allowlist is the *set of world-tier top-level keys* whose subtrees may appear under `atmosphereOverrides`:
+**`atmosphereOverrides` has a fixed, narrow allowlist of overridable world-tier roots.** As of slice 123, the allowlist is the *set of world-tier top-level keys* whose subtrees may appear under `atmosphereOverrides`:
 
 ```ts
 ATMOSPHERE_OVERRIDE_ALLOWLIST = ['sky', 'sun', 'fog'] as const;
@@ -147,17 +147,17 @@ A biome's `atmosphereOverrides` block that fails either check is a load-time sch
 
 The narrow allowlist for `atmosphereOverrides` is what closes finding F003: the override mechanism is bounded by name, not just by convention. `slabDepth` cannot be overridden by a biome because the validator refuses to accept it under `atmosphereOverrides`. If a future slice decides slab depth *should* vary by biome, that's a deliberate schema migration with a version bump, not a leak through an unbounded override.
 
-**Consequence:** Slice 114 ships the `atmosphereOverrides` schema slot but rejects any non-empty content (the override mechanism doesn't exist until slice 115). Slice 115 implements the deep-merge step and the allowlist enforcement.
+**Consequence:** Slice 122 ships the `atmosphereOverrides` schema slot but rejects any non-empty content (the override mechanism doesn't exist until slice 123). Slice 123 implements the deep-merge step and the allowlist enforcement.
 
-**Pipeline shape across slices.** The four-stage pipeline above is the slice-115 endpoint. Earlier slices run a *prefix* of it — same code path, same merge function, just with fewer inputs:
+**Pipeline shape across slices.** The four-stage pipeline above is the slice-123 endpoint. Earlier slices run a *prefix* of it — same code path, same merge function, just with fewer inputs:
 
 | Slice | `defaults.ts` contains | Pipeline stages active | Notes |
 |---|---|---|---|
-| 113 | All current hardcoded values: `camera`, `network`, `performance`, `debug`, **`sky`, `sun`, `fog`, `terrain`, `surface`, `cliff`, `slopeBlend`** (mirrors what's in [src/config.ts](../../src/config.ts) today). Also a hardcoded `defaultBiome` constant (used in slice 114). | `defaults → profile.mergeable` only. Loader skips world/biome fetches because manifest lists no worlds and the biome fetch step doesn't exist yet. | Profile YAMLs externalize. World/biome are still hardcoded inside `defaults.ts`. |
-| 114 | `defaults.ts` loses the biome-tier keys (`surface`, `cliff`, `slopeBlend`); they move into `public/biomes/<name>/biome.yaml`. The `defaultBiome` constant **stays in `defaults.ts`** as `DEFAULT_BIOME_NAME` and drives biome selection until slice 115 moves it to `world.yaml`. | `defaults → biome.mergeable → profile.mergeable`. World still in defaults. | First biome.yaml ships; loader gains the biome fetch step. `fetcher.ts` reads `DEFAULT_BIOME_NAME` from `defaults.ts` to know which biome to fetch (no world.yaml exists yet). |
-| 115 | `defaults.ts` loses the world-tier keys (`sky`, `sun`, `fog`, `terrain`) and the `DEFAULT_BIOME_NAME` constant; they move into `public/config/worlds/<name>.yaml` (with `defaultBiome` as a resolution-only key on the world). | Full pipeline: `defaults → world.mergeable → biome.mergeable → unwrap(biome.atmosphereOverrides) → profile.mergeable`. | World fetch + `atmosphereOverrides` extraction land together. `fetcher.ts` now resolves the biome name from the parsed world's `defaultBiome` field, not from `defaults.ts`. |
+| 121 | All current hardcoded values: `camera`, `network`, `performance`, `debug`, **`sky`, `sun`, `fog`, `terrain`, `surface`, `cliff`, `slopeBlend`** (mirrors what's in [src/config.ts](../../src/config.ts) today). Also a hardcoded `defaultBiome` constant (used in slice 122). | `defaults → profile.mergeable` only. Loader skips world/biome fetches because manifest lists no worlds and the biome fetch step doesn't exist yet. | Profile YAMLs externalize. World/biome are still hardcoded inside `defaults.ts`. |
+| 122 | `defaults.ts` loses the biome-tier keys (`surface`, `cliff`, `slopeBlend`); they move into `public/biomes/<name>/biome.yaml`. The `defaultBiome` constant **stays in `defaults.ts`** as `DEFAULT_BIOME_NAME` and drives biome selection until slice 123 moves it to `world.yaml`. | `defaults → biome.mergeable → profile.mergeable`. World still in defaults. | First biome.yaml ships; loader gains the biome fetch step. `fetcher.ts` reads `DEFAULT_BIOME_NAME` from `defaults.ts` to know which biome to fetch (no world.yaml exists yet). |
+| 123 | `defaults.ts` loses the world-tier keys (`sky`, `sun`, `fog`, `terrain`) and the `DEFAULT_BIOME_NAME` constant; they move into `public/config/worlds/<name>.yaml` (with `defaultBiome` as a resolution-only key on the world). | Full pipeline: `defaults → world.mergeable → biome.mergeable → unwrap(biome.atmosphereOverrides) → profile.mergeable`. | World fetch + `atmosphereOverrides` extraction land together. `fetcher.ts` now resolves the biome name from the parsed world's `defaultBiome` field, not from `defaults.ts`. |
 
-The merge function is written in slice 113 to accept any subset of the inputs and apply only the stages whose inputs are present. Slice 114 and 115 add inputs to an existing pipeline rather than restructuring it; `defaults.ts` shrinks as content moves into YAML. This makes each slice's diff small and preserves the invariant that `getConfig()` returns the same effective values before and after each migration step (renderer behavior unchanged across all three slices).
+The merge function is written in slice 121 to accept any subset of the inputs and apply only the stages whose inputs are present. Slice 122 and 123 add inputs to an existing pipeline rather than restructuring it; `defaults.ts` shrinks as content moves into YAML. This makes each slice's diff small and preserves the invariant that `getConfig()` returns the same effective values before and after each migration step (renderer behavior unchanged across all three slices).
 
 ### Schema is versioned from day one
 
@@ -165,7 +165,7 @@ The merge function is written in slice 113 to accept any subset of the inputs an
 
 **Rationale:** Same loud-failure principle as slice 112's wire-protocol opcode-versioning: breaking changes get a new version, never a silent redefinition of an existing field. A typo'd field name that silently uses a default is the worst failure mode for a config system — the file looks right, the rendering looks wrong, the cause is invisible. Strict mode catches it on load. Migration helpers will handle v1 → v2 conversions when we get there; until then, every file in the repo is v1.
 
-**Type validation is also strict.** A schema validator type-checks every field at load time: `fov: "wide"` when a number was expected fails the load with a specific error pointing to the file, line, and field. PM-confirmed for slice 113. This is cheap to add now (~30-50 lines + a small fixture) and expensive to retrofit once bad profiles ship to other developers.
+**Type validation is also strict.** A schema validator type-checks every field at load time: `fov: "wide"` when a number was expected fails the load with a specific error pointing to the file, line, and field. PM-confirmed for slice 121. This is cheap to add now (~30-50 lines + a small fixture) and expensive to retrofit once bad profiles ship to other developers.
 
 **`schemaVersion` is per tier; bumps are scoped to the tiers whose contract changes.** Each tier has its own `schemaVersion` and migrates independently. For changes to `ATMOSPHERE_OVERRIDE_ALLOWLIST`:
 
@@ -179,7 +179,7 @@ The profile tier's `schemaVersion` evolves independently of the other two — pr
 
 **Decision:** All YAML config files and all biome assets (textures, eventually audio and props) are served as **static files** under the viewer's web root and **fetched at runtime over HTTP** by the loader. They are not bundled into the JavaScript output, not parsed at build time, and not statically substituted via `import.meta.env`. Editing a YAML file or swapping a texture requires only a page refresh, not a rebuild.
 
-Concretely, after slice 113 lands:
+Concretely, after slice 121 lands:
 
 ```
 public/
@@ -226,7 +226,7 @@ The manifest is a JSON object with this shape:
 
 **Profile selection is a URL query parameter or `localStorage` value, not a Vite env var.** Reading `?profile=cinematic` from the URL means a developer can switch profiles without a rebuild. Falling back to `localStorage.getItem('migratory.profile')` lets a stable choice persist across sessions. The hardcoded fallback is `'default'`. (Note: `VITE_PROFILE` was the original sketch in the exploration doc; it was wrong because Vite env vars are baked at build time. Fix: runtime selection.)
 
-**Write path:** `selection.ts` is a **pure reader** — it returns the candidate profile name from `?profile=`, localStorage, or the `'default'` fallback, but never writes. The localStorage write happens in `index.ts` *after* `discovery.ts` has confirmed the resolved name is in the manifest (after data flow step 5). This ordering ensures an invalid `?profile=` name is never persisted: if the name fails discovery, `initializeConfig()` throws before the write, and the next page load without `?profile=` uses whatever was in localStorage previously (or `'default'`). No UI is needed for this in slices 113-115; an in-app picker UI (deferred with hot reload) will write to the same key via the same post-validation path.
+**Write path:** `selection.ts` is a **pure reader** — it returns the candidate profile name from `?profile=`, localStorage, or the `'default'` fallback, but never writes. The localStorage write happens in `index.ts` *after* `discovery.ts` has confirmed the resolved name is in the manifest (after data flow step 5). This ordering ensures an invalid `?profile=` name is never persisted: if the name fails discovery, `initializeConfig()` throws before the write, and the next page load without `?profile=` uses whatever was in localStorage previously (or `'default'`). No UI is needed for this in slices 121-123; an in-app picker UI (deferred with hot reload) will write to the same key via the same post-validation path.
 
 **Rationale:** The primary stated goal of the 120-series is *content velocity* — editing a biome's color or swapping a texture should not require a code change, a build, or a code review. Build-time bundling of YAML or env-var-baked profile selection both directly contradict that goal. Runtime fetching from `public/` is the only design that delivers the goal.
 
@@ -244,7 +244,7 @@ This decision dissolves the "build-pipeline tension" risk previously logged: the
 
 **Rationale:** This is the Minecraft datapack pattern, chosen because it's known to scale. Self-contained means a biome can be moved or shared with `cp -r`. Directory scan means no central registry to maintain. Relative paths mean a biome pack doesn't break when the parent directory moves. The eventual UX of "drop a third-party biome pack into the worldpacks dir" works trivially.
 
-**Consequence:** The viewer build pipeline needs to handle biome assets at build time (for `pnpm build`) and at dev-server time (for `pnpm dev` with hot reload). Vite's `public/` convention is the obvious home, but biomes need to live alongside their YAML — slice 113 will resolve the exact build-time strategy.
+**Consequence:** The viewer build pipeline needs to handle biome assets at build time (for `pnpm build`) and at dev-server time (for `pnpm dev` with hot reload). Vite's `public/` convention is the obvious home, but biomes need to live alongside their YAML — slice 121 will resolve the exact build-time strategy.
 
 ### Profiles reference worlds and biomes by name, not by path
 
@@ -273,25 +273,25 @@ Option (a) is portable across every YAML library and reads identically to the ex
 
 **Rationale:** Multi-biome rendering — regions of terrain belonging to different biomes, blended at edges — is a hard problem with two dependencies: (1) a server protocol extension declaring biome IDs per terrain cell, and (2) a renderer extension blending materials at biome boundaries. Both are far-future. Until then, "current biome" is a single config object. The schema and discovery manifest support the future (`public/biomes/` holds many) but the runtime selects one.
 
-**Consequence:** Slice 114 is allowed to be naive about which biome is active — it's whichever the world.yaml declares as `defaultBiome`. Slices that introduce multi-biome rendering will extend this; the file format is forward-compatible (see "Future-compatibility scope" below for the renderer-interface caveat).
+**Consequence:** Slice 122 is allowed to be naive about which biome is active — it's whichever the world.yaml declares as `defaultBiome`. Slices that introduce multi-biome rendering will extend this; the file format is forward-compatible (see "Future-compatibility scope" below for the renderer-interface caveat).
 
-### Hot reload of config is a non-goal for slices 113-115
+### Hot reload of config is a non-goal for slices 121-123
 
-**Decision:** Editing a YAML file or biome asset and saving it does **not** trigger an in-place reload of the running viewer in slices 113-115. The author refreshes the page (or restarts `pnpm dev`) to pick up the change. Vite's normal asset-change detection still works for textures the renderer is already aware of, but the config-tier reload pipeline is *not* hot-pathed.
+**Decision:** Editing a YAML file or biome asset and saving it does **not** trigger an in-place reload of the running viewer in slices 121-123. The author refreshes the page (or restarts `pnpm dev`) to pick up the change. Vite's normal asset-change detection still works for textures the renderer is already aware of, but the config-tier reload pipeline is *not* hot-pathed.
 
-**Rationale:** Hot reload of layered config has real design surface: when a biome.yaml is edited and saved, does the entire three-tier config rehydrate or only the changed tier? If the edited YAML fails validation, does the viewer fall back to the last valid config or crash? If `atmosphereOverrides` are removed, does the renderer revert to the world default immediately or on next biome transition? Each of these has reasonable answers, but the answers depend on a usage model we don't have data for yet. The right time to design hot reload is after slice 115 has shipped and we've actually felt the pain of "edit, refresh, edit, refresh." Doing it earlier is speculative.
+**Rationale:** Hot reload of layered config has real design surface: when a biome.yaml is edited and saved, does the entire three-tier config rehydrate or only the changed tier? If the edited YAML fails validation, does the viewer fall back to the last valid config or crash? If `atmosphereOverrides` are removed, does the renderer revert to the world default immediately or on next biome transition? Each of these has reasonable answers, but the answers depend on a usage model we don't have data for yet. The right time to design hot reload is after slice 123 has shipped and we've actually felt the pain of "edit, refresh, edit, refresh." Doing it earlier is speculative.
 
 The page-refresh path is fast: the loader's three HTTP fetches plus validation run in well under 100ms on a localhost dev server. Refresh is acceptable friction for the first three slices.
 
-**Consequence:** Slices 113-115 must not write code paths that *assume* hot reload (e.g., subscribing to file-watcher events). The loader is a one-shot startup component. A future slice (probably co-incident with the in-app biome-picker UI) introduces hot reload deliberately, and that slice owns the design questions above.
+**Consequence:** Slices 121-123 must not write code paths that *assume* hot reload (e.g., subscribing to file-watcher events). The loader is a one-shot startup component. A future slice (probably co-incident with the in-app biome-picker UI) introduces hot reload deliberately, and that slice owns the design questions above.
 
 ### Reserved schema slots for future expansion
 
-**Decision:** Slice 114's biome.yaml schema **reserves** keys for `props`, `audio`, and `particles` even though slice 114 ships none of those features. The validator accepts these keys but rejects non-empty values:
+**Decision:** Slice 122's biome.yaml schema **reserves** keys for `props`, `audio`, and `particles` even though slice 122 ships none of those features. The validator accepts these keys but rejects non-empty values:
 
 ```yaml
-props: []      # OK — slice 114 accepts empty list
-audio: {}      # OK — slice 114 accepts empty object
+props: []      # OK — slice 122 accepts empty list
+audio: {}      # OK — slice 122 accepts empty object
 # props: [some_tree] would fail load with "props are not yet supported"
 ```
 
@@ -312,7 +312,7 @@ The asymmetry is deliberate: a missing texture is an *asset-pipeline* problem (s
 
 The magenta-checker convention is industry-standard *because* it's hard to confuse with intended art and hard to miss in screenshots — exactly the properties needed for "obviously-broken" sentinel art.
 
-**Consequence for slice 114:** Slice 114 ships the magenta-checker sentinel as a 64×64 PNG under `public/assets/missing-texture.png`. The loader holds a single shared `Texture` instance pointing at it. Three.js's caching ensures it's only decoded once.
+**Consequence for slice 122:** Slice 122 ships the magenta-checker sentinel as a 64×64 PNG under `public/assets/missing-texture.png`. The loader holds a single shared `Texture` instance pointing at it. Three.js's caching ensures it's only decoded once.
 
 **Sentinel readiness gates biome texture loading.** Three.js's `TextureLoader` is async, so the sentinel is not usable until its own image has decoded. `missing-texture.ts` exposes `getSentinel(): Promise<Texture>` and an internal eager-load that begins at `initializeConfig()` time, before any biome texture loading starts. Biome texture loading awaits the sentinel promise once at startup (the same promise is reused — no per-texture await), then proceeds in parallel; any subsequent `onError` handler synchronously references the already-resolved `Texture`. If the sentinel itself fails to load (a viewer-build problem, not a content problem), `initializeConfig()` rejects with an explicit error: shipping a viewer without its missing-texture sentinel is a build defect, not a runtime condition to recover from.
 
@@ -334,14 +334,14 @@ public/
 │   │   └── default.yaml           # checked in
 │   └── experiments/               # gitignored — scratch profiles for local iteration; scanned by the manifest plugin
 └── biomes/
-    ├── alien-vegetation/          # migrated from existing DEFAULT_BIOME in slice 114
+    ├── alien-vegetation/          # migrated from existing DEFAULT_BIOME in slice 122
     │   ├── biome.yaml
     │   └── textures/
     │       ├── surface-diffuse.jpg
     │       ├── surface-normal.jpg
     │       ├── cliff-diffuse.jpg
     │       └── cliff-normal.jpg
-    └── desert-rock/               # second biome introduced in slice 114 to prove genericity
+    └── desert-rock/               # second biome introduced in slice 122 to prove genericity
         ├── biome.yaml
         └── textures/
 
@@ -380,8 +380,8 @@ vite.config.ts                     # adds viteConfigManifest plugin for manifest
 - **`fetcher.ts`** is the only module in `src/config/` that performs I/O, and the only one that knows the fetch order. Its public function (called by `index.ts`) does:
   1. HTTP GET `public/config/manifest.json` → parse → hand to `discovery.ts`.
   2. Resolve the active profile name (from `selection.ts`) → fetch `<path>.yaml` → call `loader.parseProfile(text)`.
-  3. (slice 115+) From the profile's `resolution.world` → resolve via `discovery.ts` → fetch world YAML → call `loader.parseWorld(text)`.
-  4. From `world.resolution.defaultBiome` (slice 115+) or `defaults.DEFAULT_BIOME_NAME` (slice 114) → resolve via `discovery.ts` → fetch biome YAML → call `loader.parseBiome(text)`.
+  3. (slice 123+) From the profile's `resolution.world` → resolve via `discovery.ts` → fetch world YAML → call `loader.parseWorld(text)`.
+  4. From `world.resolution.defaultBiome` (slice 123+) or `defaults.DEFAULT_BIOME_NAME` (slice 122) → resolve via `discovery.ts` → fetch biome YAML → call `loader.parseBiome(text)`.
   5. Call `loader.assemble({ profile, world, biome })` and return the resulting `ViewerConfig` (plus the resolution objects, which `index.ts` may expose via `getActiveBiomeName()` etc.).
 
   This is the "fetch and parse coordinator" referenced in the runtime-fetch ADR. Mocking `fetcher.ts` (or stubbing `globalThis.fetch`) is how integration tests exercise the full pipeline; unit tests bypass `fetcher.ts` entirely.
@@ -398,18 +398,18 @@ vite.config.ts                     # adds viteConfigManifest plugin for manifest
 
 ### Why the module split
 
-The existing [src/config.ts](../../src/config.ts) holds three responsibilities that must be untangled to ship slice 113 cleanly: (1) the `ViewerConfig` and related interfaces (pure types), (2) the hardcoded values (data), (3) the import point that downstream code reaches for. Conflating them with module-level mutable state would create exactly the test-isolation problem the review flagged: tests would have to mutate a shared `config` export, and parallel tests would race.
+The existing [src/config.ts](../../src/config.ts) holds three responsibilities that must be untangled to ship slice 121 cleanly: (1) the `ViewerConfig` and related interfaces (pure types), (2) the hardcoded values (data), (3) the import point that downstream code reaches for. Conflating them with module-level mutable state would create exactly the test-isolation problem the review flagged: tests would have to mutate a shared `config` export, and parallel tests would race.
 
 The chosen split:
 - Types are static. Imported anywhere, no side effects.
 - Defaults are static data. Imported by the loader.
 - The accessor (`getConfig()`) wraps a module-private variable that's set exactly once by `initializeConfig()`. Tests can call `initializeConfig({ override: ... })` (or a test-only equivalent that bypasses HTTP) to inject specific configs. There is no `import config` to mutate.
 
-This is a marginally bigger code change than "keep the singleton, add a loader," but it eliminates a category of subtle bugs (test interdependence, surprise re-imports) at the cost of a one-time grep-and-replace across the codebase. Slice 113 owns this refactor in addition to the loader work, so the cost is paid once and amortized across every future config change.
+This is a marginally bigger code change than "keep the singleton, add a loader," but it eliminates a category of subtle bugs (test interdependence, surprise re-imports) at the cost of a one-time grep-and-replace across the codebase. Slice 121 owns this refactor in addition to the loader work, so the cost is paid once and amortized across every future config change.
 
 ## Data Flow at Startup
 
-Steps below are numbered in *execution* order for the slice-115 endpoint. Steps marked `[114+]` first appear in slice 114; `[115+]` first appears in slice 115. Earlier slices skip those steps and the resulting absent inputs are simply not passed to `loader.assemble()`.
+Steps below are numbered in *execution* order for the slice-123 endpoint. Steps marked `[122+]` first appear in slice 122; `[123+]` first appears in slice 123. Earlier slices skip those steps and the resulting absent inputs are simply not passed to `loader.assemble()`.
 
 ```
  1. App boot calls initializeConfig() before rendering starts.
@@ -422,19 +422,19 @@ Steps below are numbered in *execution* order for the slice-115 endpoint. Steps 
       next session. This write happens only after validation; an invalid ?profile= name is never persisted.
  6. fetcher.ts fetches public/config/profiles/<profile>.yaml (path from discovery.ts) and calls
       loader.parseProfile(text). Returns { mergeable, resolution } where resolution.world is the world name.
- 7. [115+] fetcher.ts resolves resolution.world via discovery.ts, fetches public/config/worlds/<world>.yaml,
+ 7. [123+] fetcher.ts resolves resolution.world via discovery.ts, fetches public/config/worlds/<world>.yaml,
       and calls loader.parseWorld(text). Returns { mergeable, resolution } where resolution.defaultBiome
       is the biome name.
- 8. [114+] fetcher.ts determines the active biome name:
-      slice 114: defaults.DEFAULT_BIOME_NAME  (no world.yaml exists yet)
-      slice 115: world.resolution.defaultBiome
+ 8. [122+] fetcher.ts determines the active biome name:
+      slice 122: defaults.DEFAULT_BIOME_NAME  (no world.yaml exists yet)
+      slice 123: world.resolution.defaultBiome
       Then resolves it via discovery.ts, fetches public/biomes/<name>/biome.yaml, and calls
       loader.parseBiome(text). Biome validation includes atmosphereOverrides allowlist + leaf-name
       validation against the world schema (partial-override mode — only present fields are type-checked,
       required-field enforcement is skipped) + reserved-slot empty check.
  9. fetcher.ts calls loader.assemble({ profile, world, biome }), which deep-merges in order:
       defaults  →  world.mergeable  →  biome.mergeable  →  unwrap(biome.atmosphereOverrides)  →  profile.mergeable
-      Pipeline stages whose inputs are absent (slices 113, 114) are skipped — same code path, fewer inputs.
+      Pipeline stages whose inputs are absent (slices 121, 122) are skipped — same code path, fewer inputs.
       assemble() runs a final structural check on the merged ViewerConfig as defense-in-depth (see note below).
 10. initializeConfig() awaits the sentinel promise from step 2 (it is almost certainly already resolved).
 11. (DEV only) Preflight HEAD requests against every biome texture path; warn on 404.
@@ -454,11 +454,11 @@ Detailed slice plan lives at [120-slices.world-authoring.md](120-slices.world-au
 
 | Slice | Scope | Dependencies | Effort |
 |---|---|---|---|
-| 113 | Config externalization plumbing. New `src/config/` module per the Component Architecture (types, defaults, schema, loader, discovery, selection, missing-texture sentinel, index with `getConfig()` accessor). `viteConfigManifest` plugin generating `public/config/manifest.json`. Three checked-in profiles. Strict per-tier schema validators (keyspace + structure + types + schemaVersion). Codebase migration from `import config` singleton to `getConfig()` accessor. | 100 (existing `ViewerConfig`) | 3/5 |
-| 114 | Minimum-viable biome packs. `public/biomes/<name>/` directory convention, biome schema with reserved `props` / `audio` / `particles` slots (rejects non-empty), two biomes shipped (current + one new) to prove genericity. Magenta-checker missing-texture sentinel ships here. | 113 | 3/5 |
-| 115 | World atmosphere tier + `atmosphereOverrides` mechanism. Extracts sky/sun/fog into `public/config/worlds/*.yaml`. Implements deep-merge with allowlisted override paths. Renderer consumes the merged result; biome→world override flow is functional. | 113, 114 | 2/5 |
+| 121 | Config externalization plumbing. New `src/config/` module per the Component Architecture (types, defaults, schema, loader, discovery, selection, missing-texture sentinel, index with `getConfig()` accessor). `viteConfigManifest` plugin generating `public/config/manifest.json`. Three checked-in profiles. Strict per-tier schema validators (keyspace + structure + types + schemaVersion). Codebase migration from `import config` singleton to `getConfig()` accessor. | 100 (existing `ViewerConfig`) | 3/5 |
+| 122 | Minimum-viable biome packs. `public/biomes/<name>/` directory convention, biome schema with reserved `props` / `audio` / `particles` slots (rejects non-empty), two biomes shipped (current + one new) to prove genericity. Magenta-checker missing-texture sentinel ships here. | 121 | 3/5 |
+| 123 | World atmosphere tier + `atmosphereOverrides` mechanism. Extracts sky/sun/fog into `public/config/worlds/*.yaml`. Implements deep-merge with allowlisted override paths. Renderer consumes the merged result; biome→world override flow is functional. | 121, 122 | 2/5 |
 
-Slice 113's effort moved from 2/5 to 3/5 in this revision: the runtime-fetch-not-bundle decision adds the Vite plugin and the manifest design, and the `src/config.ts`-triple-role decomposition adds the codebase-wide accessor migration.
+Slice 121's effort moved from 2/5 to 3/5 in this revision: the runtime-fetch-not-bundle decision adds the Vite plugin and the manifest design, and the `src/config.ts`-triple-role decomposition adds the codebase-wide accessor migration.
 
 Far-future (no slice numbers reserved):
 
@@ -478,18 +478,18 @@ This ADR-level commitment is narrower than "everything keeps working forever," a
 
 ## Component Architecture Boundaries
 
-What slice 113 does **not** touch:
+What slice 121 does **not** touch:
 - Rendering code in `src/rendering/` — no algorithm or data-structure changes
 - The *logic* of `src/state.ts` and the snapshot/state-update flow — only mechanical `config.foo` → `getConfig().foo` substitutions if `src/state.ts` imports from `src/config.ts` today; those substitutions carry no behavioral change
 - Wire protocol in `src/protocol/`
 - The terrain assembler from slice 112
 - Any browser-side runtime behavior beyond reading config files
 
-What slice 114 does **not** touch:
+What slice 122 does **not** touch:
 - The renderer's biome-application mechanism (already exists from slice 110)
 - Terrain assembly or rendering math
 
-What slice 115 does **not** touch:
+What slice 123 does **not** touch:
 - Per-cell biome data (deferred far-future)
 - The biome pack format itself (only adds the override hook)
 
@@ -502,7 +502,7 @@ This separation keeps each slice mechanically reviewable and independently rever
 
 ## Risks and Mitigations
 
-- **Schema lock-in.** The schema published in slice 113/114 is committed to forever (subject only to versioned migrations). Mitigation: reserve future-feature slots (`props`, `audio`, `particles`) up front; design the override allowlist deliberately in slice 115 even though only sky/sun/fog are initially overridable; make the validator strict so accidental shape drift fails loudly.
+- **Schema lock-in.** The schema published in slice 121/122 is committed to forever (subject only to versioned migrations). Mitigation: reserve future-feature slots (`props`, `audio`, `particles`) up front; design the override allowlist deliberately in slice 123 even though only sky/sun/fog are initially overridable; make the validator strict so accidental shape drift fails loudly.
 - **Profile/world/biome triplet drift.** If a profile points at a missing world, or a world points at a missing biome, the viewer must fail loudly with a specific error rather than silently using defaults. Mitigation: discovery uses the manifest-driven name resolution, which knows the full set of available names at fetch time and can produce the specific "profile X references world Y, but Y is not in the manifest" error before any merge happens. Validator tests cover all three drift patterns.
 - **Vite plugin maintenance.** `viteConfigManifest` is a small in-tree plugin (probably <100 lines). Mitigation: keep it strictly as a directory-scan-to-JSON utility — no parsing, no validation, no opinions about content. Validation lives entirely in the runtime loader, where it can be unit-tested without Vite. The plugin's only failure mode is "manifest.json is missing or out of date," which manifests as a clear runtime error in `discovery.ts`.
 - **Test isolation around `getConfig()`.** Module-private state in `index.ts` is shared across the test process. Mitigation: `index.ts` exports a test-only `resetConfig()` (specified in Component Architecture) that clears the stored result, the resolution objects, and the in-flight promise; structure the loader as pure functions so most tests don't need `initializeConfig()` at all (they test `loader.ts` directly with fixture YAML strings).
@@ -520,7 +520,7 @@ The first architectural review (verdict CONCERNS, [120-review.arch.world-authori
 | F003 — `atmosphereOverrides` scope unbounded | concern | Override ADR now publishes a narrow allowlist. `terrain.slabDepth` is explicitly not overridable. New paths require `schemaVersion` migration. |
 | F004 — Build-time vs runtime boundary | concern | New ADR commits to runtime fetching of YAML and assets from `public/`. Profile selection moves to URL query param + localStorage, not Vite env var. |
 | F005 — Asset-loading failures unaddressed | concern | New ADR defines magenta-checker sentinel for missing textures + dev-mode HEAD preflight. Config validation failures still hard-fail. |
-| F006 — Hot reload mentioned but not designed | concern | Explicitly added as a non-goal for slices 113-115; deferred to a later slice with the in-app biome-picker UI. |
+| F006 — Hot reload mentioned but not designed | concern | Explicitly added as a non-goal for slices 121-123; deferred to a later slice with the in-app biome-picker UI. |
 | F007 — Symlink/copy build strategy is a workaround | concern | Dissolved by F004's resolution: assets and YAML both live under `public/`, no symlinks needed. Risk removed. |
 | F008 — Multi-biome "schema unchanged" understated | note | New "Future-compatibility scope" section honestly distinguishes file-format compatibility (preserved) from renderer-interface compatibility (will change). |
 | F009 — `src/config.ts` triple role | note | Component Architecture splits `src/config.ts` into `types.ts` / `defaults.ts` / `index.ts` (with `getConfig()` accessor). No module-level singleton mutation. |
@@ -536,7 +536,7 @@ A second review pass against the first revision (verdict CONCERNS, same review f
 | F003 — No null/unset semantics in deep-merge | concern | Tier-composition ADR defines YAML `null` (`~`) as a deletion marker that removes the key from the accumulator. Worked-example wording added. |
 | F004 — `experiments/` has no discovery path | concern | Manifest plugin scan list now includes `public/config/experiments/`; manifest merges experiment profiles into the same `profiles` map. Name collisions are a hard plugin-time error. |
 | F005 — `atmosphereOverrides` merge is non-standard, only by example | concern | Tier-composition ADR explicitly states step (2) extracts `atmosphereOverrides` contents and merges them at the corresponding world-tier paths, discarding the wrapper. The pipeline diagram shows this as `unwrap(biome.atmosphereOverrides)`. |
-| F006 — Slice 113 must produce a valid ViewerConfig before world tier exists | concern | New "Pipeline shape across slices" table: `defaults.ts` starts holding all current hardcoded values; pipeline runs `defaults → profile` in slice 113, gains the biome stage in 114, gains the world + unwrap stages in 115. Same merge function throughout, applied to whichever inputs are present. |
+| F006 — Slice 121 must produce a valid ViewerConfig before world tier exists | concern | New "Pipeline shape across slices" table: `defaults.ts` starts holding all current hardcoded values; pipeline runs `defaults → profile` in slice 121, gains the biome stage in 122, gains the world + unwrap stages in 123. Same merge function throughout, applied to whichever inputs are present. |
 | F007 — Biome validator coupled to world schema for allowlist | concern | `ATMOSPHERE_OVERRIDE_ALLOWLIST` lives in `schema.ts` as a single shared constant referenced by both validators. New world-tier keys are an allowlist decision in one place. |
 | F008 — `manifest.json` structure undefined | note | Runtime-fetch ADR now includes a JSON example with `schemaVersion`, `profiles`, `worlds`, `biomes` maps. Each entry is a structured object (`{ "path": "..." }`) so future per-entry metadata can be added without a manifest schema bump. |
 | F009 — Hex color string format underspecified | note | Hex-colors ADR pins the grammar to `/^0x[0-9a-f]{6}$/` (lowercase, six hex digits, no alpha, no `#`). Regex is exported from `schema.ts` as `HEX_COLOR_RE`. |
@@ -548,9 +548,9 @@ A third review pass against the second revision (verdict UNKNOWN, same review fi
 
 | Finding | Severity | Resolution |
 |---|---|---|
-| F001 — Biome mergeable subset absent from slice 115 pipeline | fail | Real bug: previous revision's pipeline `defaults ← world.mergeable ← unwrap(biome.atmosphereOverrides) ← profile.mergeable` silently dropped the biome's own keyspace (surface, cliff, slopeBlend). Fixed: pipeline is now `defaults → world.mergeable → biome.mergeable → unwrap(biome.atmosphereOverrides) → profile.mergeable`. The slice-115 row of the Pipeline-shape-across-slices table updated to match. |
-| F002 — Data-flow step ordering contradicts fetch dependency chain | fail | Real bug: previous revision numbered biome fetch (step 7) before world fetch (step 8) by *slice introduction* order, but the biome name comes from the world's `defaultBiome` and so the world must be fetched first. Data flow is now numbered in *execution* order with `[114+]` / `[115+]` annotations marking when each step first appears. |
-| F003 — Slice 114 biome selection mechanism unspecified | concern | Pipeline-shape table now states `defaults.ts` carries `DEFAULT_BIOME_NAME` in slices 113-114, drives biome selection in slice 114 (where no `world.yaml` exists), and migrates into `world.yaml`'s `defaultBiome` in slice 115. Data flow step 7 specifies the per-slice resolution. |
+| F001 — Biome mergeable subset absent from slice 123 pipeline | fail | Real bug: previous revision's pipeline `defaults ← world.mergeable ← unwrap(biome.atmosphereOverrides) ← profile.mergeable` silently dropped the biome's own keyspace (surface, cliff, slopeBlend). Fixed: pipeline is now `defaults → world.mergeable → biome.mergeable → unwrap(biome.atmosphereOverrides) → profile.mergeable`. The slice-123 row of the Pipeline-shape-across-slices table updated to match. |
+| F002 — Data-flow step ordering contradicts fetch dependency chain | fail | Real bug: previous revision numbered biome fetch (step 7) before world fetch (step 8) by *slice introduction* order, but the biome name comes from the world's `defaultBiome` and so the world must be fetched first. Data flow is now numbered in *execution* order with `[122+]` / `[123+]` annotations marking when each step first appears. |
+| F003 — Slice 122 biome selection mechanism unspecified | concern | Pipeline-shape table now states `defaults.ts` carries `DEFAULT_BIOME_NAME` in slices 121-122, drives biome selection in slice 122 (where no `world.yaml` exists), and migrates into `world.yaml`'s `defaultBiome` in slice 123. Data flow step 7 specifies the per-slice resolution. |
 | F004 — `fetcher.ts` has no documented mechanism for resolution-only keys | concern | `loader.ts` now exposes a per-tier `parseProfile()` / `parseWorld()` / `parseBiome()` that returns `{ mergeable, resolution }`, plus an `assemble()` that takes the parsed mergeable subsets. `fetcher.ts` calls them tier-by-tier and reads `resolution.world` / `resolution.defaultBiome` to drive the next fetch. Module-responsibilities and data flow updated to match. |
 | F005 — Allowlist wildcard semantics underspecified | concern | Allowlist redefined as an array of root keys (`['sky', 'sun', 'fog']`), not glob patterns. Recursive matching is implicit at the data-structure level: if a root is in the allowlist, the whole subtree below it is overridable, subject to leaf validation. |
 | F006 — `atmosphereOverrides` can introduce unrecognized fields without detection | concern | Biome validator now performs two checks on `atmosphereOverrides`: (a) top-level key in allowlist, then (b) **rebases the override subtree onto the world schema's definition for that root and runs the world validator's structural check**. A typo like `hemisphereSkyColro` fails with the same error the world validator would produce. One schema definition per root, used for both `world.yaml` and `atmosphereOverrides.<root>`. |
