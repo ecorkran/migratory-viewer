@@ -7,7 +7,7 @@ dependencies: [101-slice.websocket-consumer-and-live-entity-rendering]
 interfaces: [113-slice.entity-pipeline-performance]
 dateCreated: 20260506
 dateUpdated: 20260506
-status: in_progress
+status: complete
 ---
 
 # Slice Design: Entity Position dtype Negotiation (f32/f64)
