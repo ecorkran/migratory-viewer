@@ -1,12 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseMessage } from './deserialize';
 import { MessageType } from './types';
 
+import { PositionDtype } from './types';
+
 /**
- * Build a binary snapshot buffer matching the Python `struct.pack("<BIddI", ...)` layout
- * followed by f64 positions, f64 velocities, and i32 profile indices.
+ * Build a binary snapshot buffer matching the new 26-byte header layout:
+ * `[u8 type | u32 tick | f64 worldWidth | f64 worldHeight | u32 entityCount | u8 dtype | payload...]`
  *
- * This is the ground-truth format from `reference/server/protocol.py:serialize_snapshot`.
+ * Supports both f64 (dtype=0x00) and f32 (dtype=0x01) payloads.
  */
 function buildSnapshot(
   tick: number,
@@ -15,9 +17,12 @@ function buildSnapshot(
   positions: number[], // interleaved x,y
   velocities: number[], // interleaved vx,vy
   profileIndices: number[],
+  dtype: number = PositionDtype.F64,
 ): ArrayBuffer {
   const entityCount = profileIndices.length;
-  const totalBytes = 25 + entityCount * 36;
+  const isF32 = dtype === PositionDtype.F32;
+  const posVelBytesPerEntity = isF32 ? 16 : 32;
+  const totalBytes = 26 + entityCount * (posVelBytesPerEntity + 4);
   const buf = new ArrayBuffer(totalBytes);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.SNAPSHOT);
@@ -25,14 +30,15 @@ function buildSnapshot(
   view.setFloat64(5, worldWidth, true);
   view.setFloat64(13, worldHeight, true);
   view.setUint32(21, entityCount, true);
-  let off = 25;
+  view.setUint8(25, dtype);
+  let off = 26;
   for (const v of positions) {
-    view.setFloat64(off, v, true);
-    off += 8;
+    if (isF32) { view.setFloat32(off, v, true); off += 4; }
+    else { view.setFloat64(off, v, true); off += 8; }
   }
   for (const v of velocities) {
-    view.setFloat64(off, v, true);
-    off += 8;
+    if (isF32) { view.setFloat32(off, v, true); off += 4; }
+    else { view.setFloat64(off, v, true); off += 8; }
   }
   for (const v of profileIndices) {
     view.setInt32(off, v, true);
@@ -42,29 +48,35 @@ function buildSnapshot(
 }
 
 /**
- * Build a binary state update matching `serialize_state_update`:
- * `struct.pack("<BII", ...)` + f64 positions + f64 velocities.
+ * Build a binary state update matching the new 10-byte header layout:
+ * `[u8 type | u32 tick | u32 entityCount | u8 dtype | payload...]`
+ *
+ * Supports both f64 (dtype=0x00) and f32 (dtype=0x01) payloads.
  */
 function buildStateUpdate(
   tick: number,
   positions: number[],
   velocities: number[],
+  dtype: number = PositionDtype.F64,
 ): ArrayBuffer {
   const entityCount = positions.length / 2;
-  const totalBytes = 9 + entityCount * 32;
+  const isF32 = dtype === PositionDtype.F32;
+  const perEntityBytes = isF32 ? 16 : 32;
+  const totalBytes = 10 + entityCount * perEntityBytes;
   const buf = new ArrayBuffer(totalBytes);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.STATE_UPDATE);
   view.setUint32(1, tick, true);
   view.setUint32(5, entityCount, true);
-  let off = 9;
+  view.setUint8(9, dtype);
+  let off = 10;
   for (const v of positions) {
-    view.setFloat64(off, v, true);
-    off += 8;
+    if (isF32) { view.setFloat32(off, v, true); off += 4; }
+    else { view.setFloat64(off, v, true); off += 8; }
   }
   for (const v of velocities) {
-    view.setFloat64(off, v, true);
-    off += 8;
+    if (isF32) { view.setFloat32(off, v, true); off += 4; }
+    else { view.setFloat64(off, v, true); off += 8; }
   }
   return buf;
 }
@@ -96,13 +108,15 @@ describe('parseSnapshot', () => {
     expect(result.profileIndices.length).toBe(0);
   });
 
-  it('parses a single-entity snapshot', () => {
-    const buf = buildSnapshot(100, 1000, 1000, [12.5, -7.25], [0.5, -0.25], [3]);
+  it('parses a single-entity f64 snapshot — explicit round-trip', () => {
+    const buf = buildSnapshot(100, 1000, 1000, [12.5, -7.25], [0.5, -0.25], [3], PositionDtype.F64);
     const result = parseMessage(buf);
     if (result === null || result.type !== MessageType.SNAPSHOT) throw new Error('expected snapshot');
     expect(result.tick).toBe(100);
     expect(result.entityCount).toBe(1);
+    expect(result.positions).toBeInstanceOf(Float64Array);
     expect(Array.from(result.positions)).toEqual([12.5, -7.25]);
+    expect(result.velocities).toBeInstanceOf(Float64Array);
     expect(Array.from(result.velocities)).toEqual([0.5, -0.25]);
     expect(Array.from(result.profileIndices)).toEqual([3]);
   });
@@ -128,13 +142,14 @@ describe('parseSnapshot', () => {
 
   it('returns null when entity count exceeds cap', () => {
     // Manually craft a header claiming a huge entity count.
-    const buf = new ArrayBuffer(25);
+    const buf = new ArrayBuffer(26);
     const view = new DataView(buf);
     view.setUint8(0, MessageType.SNAPSHOT);
     view.setUint32(1, 1, true);
     view.setFloat64(5, 100, true);
     view.setFloat64(13, 100, true);
     view.setUint32(21, 9_999_999, true);
+    view.setUint8(25, PositionDtype.F64);
     expect(parseMessage(buf)).toBeNull();
   });
 
@@ -150,14 +165,58 @@ describe('parseSnapshot', () => {
   });
 });
 
+describe('parseSnapshot — f32 and unknown dtype', () => {
+  it('parses a 2-entity f32 snapshot — returns Float32Array with correct values', () => {
+    const buf = buildSnapshot(
+      55,
+      500,
+      500,
+      [1.5, 2.5, 3.5, 4.5],
+      [0.1, 0.2, 0.3, 0.4],
+      [0, 1],
+      PositionDtype.F32,
+    );
+    const result = parseMessage(buf);
+    if (result === null || result.type !== MessageType.SNAPSHOT) throw new Error('expected snapshot');
+    expect(result.entityCount).toBe(2);
+    expect(result.positions).toBeInstanceOf(Float32Array);
+    expect(result.velocities).toBeInstanceOf(Float32Array);
+    // f32 precision: compare with tolerance
+    expect(result.positions[0]).toBeCloseTo(1.5, 5);
+    expect(result.positions[1]).toBeCloseTo(2.5, 5);
+    expect(result.positions[2]).toBeCloseTo(3.5, 5);
+    expect(result.positions[3]).toBeCloseTo(4.5, 5);
+    expect(result.velocities[0]).toBeCloseTo(0.1, 5);
+    expect(result.velocities[3]).toBeCloseTo(0.4, 5);
+    expect(Array.from(result.profileIndices)).toEqual([0, 1]);
+  });
+
+  it('returns null and warns on unknown snapshot dtype', () => {
+    const buf = new ArrayBuffer(26);
+    const view = new DataView(buf);
+    view.setUint8(0, MessageType.SNAPSHOT);
+    view.setUint32(1, 1, true);
+    view.setFloat64(5, 100, true);
+    view.setFloat64(13, 100, true);
+    view.setUint32(21, 0, true);
+    view.setUint8(25, 0xff);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseMessage(buf)).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith('[protocol] unknown position dtype: 0xff');
+    warnSpy.mockRestore();
+  });
+});
+
 describe('parseStateUpdate', () => {
-  it('parses a state update', () => {
-    const buf = buildStateUpdate(99, [10, 20, 30, 40], [1, 2, 3, 4]);
+  it('parses a f64 state update — explicit round-trip', () => {
+    const buf = buildStateUpdate(99, [10, 20, 30, 40], [1, 2, 3, 4], PositionDtype.F64);
     const result = parseMessage(buf);
     if (result === null || result.type !== MessageType.STATE_UPDATE) throw new Error('expected update');
     expect(result.tick).toBe(99);
     expect(result.entityCount).toBe(2);
+    expect(result.positions).toBeInstanceOf(Float64Array);
     expect(Array.from(result.positions)).toEqual([10, 20, 30, 40]);
+    expect(result.velocities).toBeInstanceOf(Float64Array);
     expect(Array.from(result.velocities)).toEqual([1, 2, 3, 4]);
   });
 
@@ -173,6 +232,33 @@ describe('parseStateUpdate', () => {
     if (snap === null || upd === null) throw new Error('parse failed');
     expect(snap.type).toBe(MessageType.SNAPSHOT);
     expect(upd.type).toBe(MessageType.STATE_UPDATE);
+  });
+});
+
+describe('parseStateUpdate — f32 and unknown dtype', () => {
+  it('parses a 2-entity f32 state update — returns Float32Array with correct values', () => {
+    const buf = buildStateUpdate(77, [5.5, 6.5, 7.5, 8.5], [0.5, 0.6, 0.7, 0.8], PositionDtype.F32);
+    const result = parseMessage(buf);
+    if (result === null || result.type !== MessageType.STATE_UPDATE) throw new Error('expected update');
+    expect(result.entityCount).toBe(2);
+    expect(result.positions).toBeInstanceOf(Float32Array);
+    expect(result.velocities).toBeInstanceOf(Float32Array);
+    expect(result.positions[0]).toBeCloseTo(5.5, 5);
+    expect(result.positions[1]).toBeCloseTo(6.5, 5);
+    expect(result.velocities[2]).toBeCloseTo(0.7, 5);
+  });
+
+  it('returns null and warns on unknown state update dtype', () => {
+    const buf = new ArrayBuffer(10);
+    const view = new DataView(buf);
+    view.setUint8(0, MessageType.STATE_UPDATE);
+    view.setUint32(1, 1, true);
+    view.setUint32(5, 0, true);
+    view.setUint8(9, 0xff);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseMessage(buf)).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith('[protocol] unknown position dtype: 0xff');
+    warnSpy.mockRestore();
   });
 });
 

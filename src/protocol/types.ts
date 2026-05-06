@@ -18,6 +18,14 @@ export const TerrainDtype = {
 
 export type TerrainDtypeValue = (typeof TerrainDtype)[keyof typeof TerrainDtype];
 
+/** Entity position/velocity wire dtype, encoded as a u8 flag byte in SNAPSHOT and STATE_UPDATE. */
+export const PositionDtype = {
+  F64: 0x00,
+  F32: 0x01,
+} as const;
+
+export type PositionDtypeValue = (typeof PositionDtype)[keyof typeof PositionDtype];
+
 /** Terrain payload compression algorithm, encoded in flags bits 2-4. */
 export const TerrainCompression = {
   NONE: 0,
@@ -35,8 +43,8 @@ export interface ParsedSnapshot {
   worldWidth: number;
   worldHeight: number;
   entityCount: number;
-  positions: Float64Array;
-  velocities: Float64Array;
+  positions: Float32Array | Float64Array;
+  velocities: Float32Array | Float64Array;
   profileIndices: Int32Array;
 }
 
@@ -45,8 +53,8 @@ export interface ParsedStateUpdate {
   type: typeof MessageType.STATE_UPDATE;
   tick: number;
   entityCount: number;
-  positions: Float64Array;
-  velocities: Float64Array;
+  positions: Float32Array | Float64Array;
+  velocities: Float32Array | Float64Array;
 }
 
 /**

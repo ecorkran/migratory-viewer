@@ -11,6 +11,7 @@
 import config from '../config';
 import {
   MessageType,
+  PositionDtype,
   type ParsedMessage,
   type ParsedSnapshot,
   type ParsedStateUpdate,
@@ -28,10 +29,12 @@ function readF64LE(view: DataView, offset: number): number {
   return view.getFloat64(offset, true);
 }
 
-const SNAPSHOT_HEADER_BYTES = 25;
-const SNAPSHOT_PER_ENTITY_BYTES = 36; // 16 pos + 16 vel + 4 profile
-const STATE_UPDATE_HEADER_BYTES = 9;
-const STATE_UPDATE_PER_ENTITY_BYTES = 32; // 16 pos + 16 vel
+const SNAPSHOT_HEADER_BYTES = 26;
+const SNAPSHOT_PER_ENTITY_BYTES_F64 = 36; // 32 pos+vel (f64) + 4 profile
+const SNAPSHOT_PER_ENTITY_BYTES_F32 = 20; // 16 pos+vel (f32) + 4 profile
+const STATE_UPDATE_HEADER_BYTES = 10;
+const STATE_UPDATE_PER_ENTITY_BYTES_F64 = 32; // 32 pos+vel (f64)
+const STATE_UPDATE_PER_ENTITY_BYTES_F32 = 16; // 16 pos+vel (f32)
 
 /**
  * Parse a SNAPSHOT or STATE_UPDATE message from the wire. Returns `null` (with
@@ -71,6 +74,12 @@ export function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapsh
   const worldWidth = readF64LE(view, 5);
   const worldHeight = readF64LE(view, 13);
   const entityCount = readU32LE(view, 21);
+  const dtype = readU8(view, 25);
+
+  if (dtype !== PositionDtype.F64 && dtype !== PositionDtype.F32) {
+    console.warn(`[protocol] unknown position dtype: 0x${dtype.toString(16).padStart(2, '0')}`);
+    return null;
+  }
 
   if (entityCount > config.maxEntityCount) {
     console.warn(
@@ -78,7 +87,12 @@ export function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapsh
     );
     return null;
   }
-  const expectedBytes = SNAPSHOT_HEADER_BYTES + entityCount * SNAPSHOT_PER_ENTITY_BYTES;
+
+  const perEntityBytes =
+    dtype === PositionDtype.F32 ? SNAPSHOT_PER_ENTITY_BYTES_F32 : SNAPSHOT_PER_ENTITY_BYTES_F64;
+  // perEntityBytes includes pos+vel (posVelBytes) + 4 bytes for profile index
+  const posVelBytes = perEntityBytes - 4;
+  const expectedBytes = SNAPSHOT_HEADER_BYTES + entityCount * perEntityBytes;
   if (buffer.byteLength !== expectedBytes) {
     console.warn(
       `[protocol] snapshot length mismatch: got ${buffer.byteLength}, expected ${expectedBytes} (entityCount=${entityCount})`,
@@ -87,12 +101,20 @@ export function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapsh
   }
 
   const posOffset = SNAPSHOT_HEADER_BYTES;
-  const velOffset = posOffset + entityCount * 16;
-  const idxOffset = velOffset + entityCount * 16;
+  const perComponentBytes = posVelBytes / 4; // bytes per component (x or y for one entity)
+  const velOffset = posOffset + entityCount * perComponentBytes * 2;
+  const idxOffset = velOffset + entityCount * perComponentBytes * 2;
 
   // Copy: detach from the WebSocket message buffer so reuse on the next tick is safe.
-  const positions = new Float64Array(buffer.slice(posOffset, posOffset + entityCount * 16));
-  const velocities = new Float64Array(buffer.slice(velOffset, velOffset + entityCount * 16));
+  const posByteLen = entityCount * perComponentBytes * 2;
+  const positions =
+    dtype === PositionDtype.F32
+      ? new Float32Array(buffer.slice(posOffset, posOffset + posByteLen))
+      : new Float64Array(buffer.slice(posOffset, posOffset + posByteLen));
+  const velocities =
+    dtype === PositionDtype.F32
+      ? new Float32Array(buffer.slice(velOffset, velOffset + posByteLen))
+      : new Float64Array(buffer.slice(velOffset, velOffset + posByteLen));
   const profileIndices = new Int32Array(buffer.slice(idxOffset, idxOffset + entityCount * 4));
 
   return {
@@ -116,6 +138,12 @@ export function parseStateUpdate(buffer: ArrayBuffer, view: DataView): ParsedSta
   }
   const tick = readU32LE(view, 1);
   const entityCount = readU32LE(view, 5);
+  const dtype = readU8(view, 9);
+
+  if (dtype !== PositionDtype.F64 && dtype !== PositionDtype.F32) {
+    console.warn(`[protocol] unknown position dtype: 0x${dtype.toString(16).padStart(2, '0')}`);
+    return null;
+  }
 
   if (entityCount > config.maxEntityCount) {
     console.warn(
@@ -123,7 +151,12 @@ export function parseStateUpdate(buffer: ArrayBuffer, view: DataView): ParsedSta
     );
     return null;
   }
-  const expectedBytes = STATE_UPDATE_HEADER_BYTES + entityCount * STATE_UPDATE_PER_ENTITY_BYTES;
+
+  const perEntityBytes =
+    dtype === PositionDtype.F32
+      ? STATE_UPDATE_PER_ENTITY_BYTES_F32
+      : STATE_UPDATE_PER_ENTITY_BYTES_F64;
+  const expectedBytes = STATE_UPDATE_HEADER_BYTES + entityCount * perEntityBytes;
   if (buffer.byteLength !== expectedBytes) {
     console.warn(
       `[protocol] state update length mismatch: got ${buffer.byteLength}, expected ${expectedBytes} (entityCount=${entityCount})`,
@@ -132,10 +165,18 @@ export function parseStateUpdate(buffer: ArrayBuffer, view: DataView): ParsedSta
   }
 
   const posOffset = STATE_UPDATE_HEADER_BYTES;
-  const velOffset = posOffset + entityCount * 16;
+  const perComponentBytes = perEntityBytes / 4; // bytes per component (x or y for one entity)
+  const velOffset = posOffset + entityCount * perComponentBytes * 2;
+  const posByteLen = entityCount * perComponentBytes * 2;
 
-  const positions = new Float64Array(buffer.slice(posOffset, posOffset + entityCount * 16));
-  const velocities = new Float64Array(buffer.slice(velOffset, velOffset + entityCount * 16));
+  const positions =
+    dtype === PositionDtype.F32
+      ? new Float32Array(buffer.slice(posOffset, posOffset + posByteLen))
+      : new Float64Array(buffer.slice(posOffset, posOffset + posByteLen));
+  const velocities =
+    dtype === PositionDtype.F32
+      ? new Float32Array(buffer.slice(velOffset, velOffset + posByteLen))
+      : new Float64Array(buffer.slice(velOffset, velOffset + posByteLen));
 
   return {
     type: MessageType.STATE_UPDATE,
