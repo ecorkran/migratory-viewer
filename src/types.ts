@@ -35,6 +35,8 @@ export interface ViewerState {
   positions: Float32Array | Float64Array | null;
   /** Interleaved (vx, vy) velocities, length = entityCount * 2. Null until first snapshot. */
   velocities: Float32Array | Float64Array | null;
+  /** Pre-baked terrain height per entity (world Y), length = entityCount. Null until first snapshot. */
+  entityHeights: Float32Array | null;
   /** Server tick of the most recently applied message. */
   currentTick: number;
   /** Current connection state. */
@@ -54,6 +56,7 @@ export function createInitialViewerState(): ViewerState {
     profileIndices: null,
     positions: null,
     velocities: null,
+    entityHeights: null,
     currentTick: 0,
     connectionStatus: 'disconnected',
     terrain: null,

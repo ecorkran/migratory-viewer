@@ -9,8 +9,19 @@
 
 import { createInitialViewerState, type TerrainGrid, type ViewerState } from './types';
 import type { ParsedSnapshot, ParsedStateUpdate, ParsedTerrain } from './protocol/types';
+import { getTerrainHeight } from './rendering/terrain';
 
 export const viewerState: ViewerState = createInitialViewerState();
+
+/** Recompute entityHeights from current positions and terrain. No-op if positions or heights are null. */
+function bakeEntityHeights(state: ViewerState): void {
+  if (state.positions === null || state.entityHeights === null) return;
+  for (let i = 0; i < state.entityCount; i++) {
+    const x = state.positions[i * 2];
+    const y = state.positions[i * 2 + 1];
+    state.entityHeights[i] = getTerrainHeight(state.terrain, x, y);
+  }
+}
 
 /** Apply a SNAPSHOT message: replace world bounds, entity count, and all per-entity arrays. */
 export function applySnapshot(state: ViewerState, parsed: ParsedSnapshot): void {
@@ -21,6 +32,8 @@ export function applySnapshot(state: ViewerState, parsed: ParsedSnapshot): void 
   state.velocities = parsed.velocities;
   state.profileIndices = parsed.profileIndices;
   state.currentTick = parsed.tick;
+  state.entityHeights = new Float32Array(parsed.entityCount);
+  bakeEntityHeights(state);
 }
 
 /** Apply a TERRAIN message: store the elevation grid and increment the revision counter. */
@@ -35,6 +48,9 @@ export function applyTerrain(state: ViewerState, parsed: ParsedTerrain): void {
   };
   state.terrain = grid;
   state.terrainRevision += 1;
+  if (state.positions !== null && state.entityHeights !== null) {
+    bakeEntityHeights(state);
+  }
 }
 
 /**
@@ -67,4 +83,5 @@ export function applyStateUpdate(state: ViewerState, parsed: ParsedStateUpdate):
     state.velocities.set(parsed.velocities);
   }
   state.currentTick = parsed.tick;
+  bakeEntityHeights(state);
 }
