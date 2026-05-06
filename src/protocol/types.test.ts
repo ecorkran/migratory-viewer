@@ -15,8 +15,8 @@ describe('protocol constants', () => {
   it('TerrainDtype pins low-2-bit dtype encoding', () => {
     expect(TerrainDtype).toEqual({
       F32: 0,
-      F64: 1,
-      UINT16: 2,
+      UINT16: 1,
+      F64: 2,
     });
   });
 

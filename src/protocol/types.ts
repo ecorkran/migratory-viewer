@@ -12,8 +12,8 @@ export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
 /** Terrain payload dtype, encoded in low 2 bits of the flags byte. */
 export const TerrainDtype = {
   F32: 0,
-  F64: 1,
-  UINT16: 2,
+  UINT16: 1,
+  F64: 2,
 } as const;
 
 export type TerrainDtypeValue = (typeof TerrainDtype)[keyof typeof TerrainDtype];
