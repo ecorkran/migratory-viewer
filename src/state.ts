@@ -41,6 +41,9 @@ export function applyTerrain(state: ViewerState, parsed: ParsedTerrain): void {
  * Apply a STATE_UPDATE message: copy positions/velocities into existing buffers
  * (no reallocation). On length mismatch, log and return early — the caller
  * should force a reconnect to receive a fresh snapshot.
+ *
+ * If the dtype changes mid-connection (e.g. f64 snapshot followed by f32 update),
+ * the buffers are replaced rather than copied to avoid silent precision truncation.
  */
 export function applyStateUpdate(state: ViewerState, parsed: ParsedStateUpdate): void {
   if (
@@ -53,7 +56,15 @@ export function applyStateUpdate(state: ViewerState, parsed: ParsedStateUpdate):
     );
     return;
   }
-  state.positions.set(parsed.positions);
-  state.velocities.set(parsed.velocities);
+
+  if (state.positions.constructor !== parsed.positions.constructor) {
+    // dtype switch mid-connection: replace buffers rather than copy cross-dtype
+    console.warn('[state] position dtype changed mid-connection — replacing buffers');
+    state.positions = parsed.positions;
+    state.velocities = parsed.velocities;
+  } else {
+    state.positions.set(parsed.positions);
+    state.velocities.set(parsed.velocities);
+  }
   state.currentTick = parsed.tick;
 }

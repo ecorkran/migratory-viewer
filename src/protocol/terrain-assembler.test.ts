@@ -19,6 +19,8 @@ import {
 } from './_test-helpers';
 import { MessageType, TerrainCompression, type TerrainCompressionValue, TerrainDtype, type TerrainDtypeValue } from './types';
 
+import { PositionDtype } from './types';
+
 function buildSnapshot(
   tick: number,
   worldWidth: number,
@@ -28,7 +30,8 @@ function buildSnapshot(
   profileIndices: number[],
 ): ArrayBuffer {
   const entityCount = profileIndices.length;
-  const totalBytes = 25 + entityCount * 36;
+  // 26-byte header + f64 payload (36 bytes/entity: 32 pos+vel + 4 profile idx)
+  const totalBytes = 26 + entityCount * 36;
   const buf = new ArrayBuffer(totalBytes);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.SNAPSHOT);
@@ -36,7 +39,8 @@ function buildSnapshot(
   view.setFloat64(5, worldWidth, true);
   view.setFloat64(13, worldHeight, true);
   view.setUint32(21, entityCount, true);
-  let off = 25;
+  view.setUint8(25, PositionDtype.F64);
+  let off = 26;
   for (const v of positions) { view.setFloat64(off, v, true); off += 8; }
   for (const v of velocities) { view.setFloat64(off, v, true); off += 8; }
   for (const v of profileIndices) { view.setInt32(off, v, true); off += 4; }
@@ -49,13 +53,15 @@ function buildStateUpdate(
   velocities: number[],
 ): ArrayBuffer {
   const entityCount = positions.length / 2;
-  const totalBytes = 9 + entityCount * 32;
+  // 10-byte header + f64 payload (32 bytes/entity)
+  const totalBytes = 10 + entityCount * 32;
   const buf = new ArrayBuffer(totalBytes);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.STATE_UPDATE);
   view.setUint32(1, tick, true);
   view.setUint32(5, entityCount, true);
-  let off = 9;
+  view.setUint8(9, PositionDtype.F64);
+  let off = 10;
   for (const v of positions) { view.setFloat64(off, v, true); off += 8; }
   for (const v of velocities) { view.setFloat64(off, v, true); off += 8; }
   return buf;

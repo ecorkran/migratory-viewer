@@ -32,9 +32,9 @@ export interface ViewerState {
   /** Per-entity profile indices. Null until first snapshot. */
   profileIndices: Int32Array | null;
   /** Interleaved (x, y) positions, length = entityCount * 2. Null until first snapshot. */
-  positions: Float64Array | null;
+  positions: Float32Array | Float64Array | null;
   /** Interleaved (vx, vy) velocities, length = entityCount * 2. Null until first snapshot. */
-  velocities: Float64Array | null;
+  velocities: Float32Array | Float64Array | null;
   /** Server tick of the most recently applied message. */
   currentTick: number;
   /** Current connection state. */

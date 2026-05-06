@@ -26,6 +26,16 @@ function makeUpdate(entityCount: number, tick = 2, fill = 9): ParsedStateUpdate 
   };
 }
 
+function makeF32Update(entityCount: number, tick = 2, fill = 9): ParsedStateUpdate {
+  return {
+    type: MessageType.STATE_UPDATE,
+    tick,
+    entityCount,
+    positions: new Float32Array(entityCount * 2).fill(fill),
+    velocities: new Float32Array(entityCount * 2).fill(fill),
+  };
+}
+
 describe('createInitialViewerState', () => {
   it('returns expected initial values', () => {
     const s = createInitialViewerState();
@@ -85,6 +95,37 @@ describe('applyStateUpdate', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     applyStateUpdate(state, makeUpdate(2));
     expect(state.currentTick).toBe(0);
+    warnSpy.mockRestore();
+  });
+
+  it('same dtype: copies into existing buffers without reallocating', () => {
+    const state = createInitialViewerState();
+    applySnapshot(state, makeSnapshot(2, 1));
+    const posRef = state.positions;
+    const velRef = state.velocities;
+    applyStateUpdate(state, makeUpdate(2, 5, 42));
+    // same-dtype path: buffer identity preserved
+    expect(state.positions).toBe(posRef);
+    expect(state.velocities).toBe(velRef);
+    expect(state.positions?.[0]).toBe(42);
+    expect(state.currentTick).toBe(5);
+  });
+
+  it('dtype switch: replaces buffers and logs warning', () => {
+    const state = createInitialViewerState();
+    // Establish f64 buffers via snapshot
+    applySnapshot(state, makeSnapshot(2, 1));
+    expect(state.positions).toBeInstanceOf(Float64Array);
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const f32Update = makeF32Update(2, 3, 7);
+    applyStateUpdate(state, f32Update);
+
+    expect(warnSpy).toHaveBeenCalledWith('[state] position dtype changed mid-connection — replacing buffers');
+    expect(state.positions).toBeInstanceOf(Float32Array);
+    expect(state.velocities).toBeInstanceOf(Float32Array);
+    expect(state.positions?.[0]).toBe(7);
+    expect(state.currentTick).toBe(3);
     warnSpy.mockRestore();
   });
 });

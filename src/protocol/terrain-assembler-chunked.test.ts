@@ -19,16 +19,18 @@ import {
   U16_3X3_ELEVATION_MAX,
   U16_3X3_ELEVATION_MIN,
 } from './_test-helpers';
-import { MessageType, TerrainCompression, type TerrainCompressionValue, TerrainDtype, type TerrainDtypeValue } from './types';
+import { MessageType, PositionDtype, TerrainCompression, type TerrainCompressionValue, TerrainDtype, type TerrainDtypeValue } from './types';
 
 function buildStateUpdate(tick: number, positions: number[], velocities: number[]): ArrayBuffer {
   const entityCount = positions.length / 2;
-  const buf = new ArrayBuffer(9 + entityCount * 32);
+  // 10-byte header + f64 payload (32 bytes/entity)
+  const buf = new ArrayBuffer(10 + entityCount * 32);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.STATE_UPDATE);
   view.setUint32(1, tick, true);
   view.setUint32(5, entityCount, true);
-  let off = 9;
+  view.setUint8(9, PositionDtype.F64);
+  let off = 10;
   for (const v of positions) { view.setFloat64(off, v, true); off += 8; }
   for (const v of velocities) { view.setFloat64(off, v, true); off += 8; }
   return buf;
