@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 20260506
+
+### Added
+- The viewer now reads the entity position dtype flag the server sends on every message, and correctly handles both f32 and f64 entity data. Previously the viewer assumed f64 and would silently misinterpret f32 frames as garbage coordinates.
+- When the server switches dtype mid-connection (e.g. during a rolling server update), the viewer adapts automatically rather than crashing.
+
+### Fixed
+- Entity positions were broken when the server was configured to send f32 entity data (`agent_wire_dtype = "f32"`). The wire format change had already been deployed server-side; this brings the viewer in sync.
+
+### Performance
+- f32 entity data is now supported end-to-end. At 10k entities, STATE_UPDATE frames drop from ~312 KB to ~156 KB when the server uses f32 — roughly half the WebSocket throughput per tick.
+
 ## [0.0.4] - 20260424
 
 ### Added (slice 112 — Terrain Wire Protocol v2)

@@ -9,6 +9,34 @@ A lightweight, append-only record of development activity. Newest entries first.
 
 ---
 
+## 20260506
+
+### Slice 114: Entity Position dtype Negotiation (f32/f64) — Implementation Complete (T1–T15)
+
+**Commits this session:**
+- `3d4a56b` feat: add PositionDtype and f32/f64 branching to deserializer
+- `52a667e` feat: propagate Float32Array | Float64Array union through ViewerState and state layer
+
+**Delivered:**
+- `PositionDtype = { F64: 0x00, F32: 0x01 } as const` added to `protocol/types.ts`
+- `ParsedSnapshot` and `ParsedStateUpdate` interfaces widened: `positions/velocities` now `Float32Array | Float64Array`
+- `parseSnapshot`: 26-byte header (was 25); dtype flag at offset 25; branches to `Float32Array` or `Float64Array` for pos/vel; unknown dtype → `console.warn` + `null`
+- `parseStateUpdate`: 10-byte header (was 9); dtype flag at offset 9; same branching
+- `ViewerState.positions/velocities` widened to `Float32Array | Float64Array | null`
+- `applyStateUpdate`: same-dtype path uses `.set()` as before; dtype-switch path replaces buffers and logs a warning; length-mismatch path unchanged
+- `rendering/entities.ts`: no logic changes needed (numeric index access works for both typed array types)
+- 6 new tests; all 4 test files with buffer-building helpers updated to the new header format
+- 127 tests passing total (was 121)
+
+**Key decisions:**
+- dtype-switch in `applyStateUpdate` replaces buffers rather than using cross-dtype `.set()` — avoids silent f64→f32 truncation. See slice design Special Considerations.
+- `perComponentBytes` derived from `perEntityBytes / 4` (pos+vel is 4 components per entity); cleaner than duplicating element-size logic.
+- Test helpers in `terrain-assembler.test.ts`, `terrain-assembler-chunked.test.ts`, and `connection.test.ts` each had their own local `buildSnapshot`/`buildStateUpdate` with the old header — all updated to include the dtype byte.
+
+**Remaining:** T16/T17 are manual smoke tests requiring a running server.
+
+---
+
 ## 20260410
 
 ### Slice 105: HUD and Status Panel — Complete
