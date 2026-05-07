@@ -21,6 +21,7 @@ const entityMesh  = createEntities(scene);
 let lastWorldWidth = config.worldWidth;
 let lastWorldHeight = config.worldHeight;
 let lastTerrainRevision = 0;
+let lastRenderedTick = -1;
 
 window.addEventListener('resize', () => {
   handleRigResize(rig);
@@ -58,6 +59,9 @@ renderer.setAnimationLoop(() => {
   }
 
   updateRig(rig, delta);
-  updateEntities(entityMesh, viewerState);
+  if (viewerState.currentTick !== lastRenderedTick) {
+    lastRenderedTick = viewerState.currentTick;
+    updateEntities(entityMesh, viewerState);
+  }
   renderer.render(scene, rig.activeCamera);
 });

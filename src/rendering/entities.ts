@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu';
 import config from '../config.ts';
 import type { ViewerState } from '../types.ts';
-import { getTerrainHeight } from './terrain.ts';
 
 const dummy = new THREE.Object3D();
 const tmpColor = new THREE.Color();
@@ -64,7 +63,7 @@ export function updateEntities(mesh: THREE.InstancedMesh, state: ViewerState): v
     const scale = coneSize / config.coneHeightRatio;
     const verticalOffset = coneSize * config.entityVerticalOffsetRatio;
 
-    const h = getTerrainHeight(state.terrain, x, y);
+    const h = state.entityHeights !== null ? state.entityHeights[i] : 0;
     dummy.position.set(x, h + verticalOffset, y);
     dummy.rotation.set(0, -Math.atan2(vy, vx) + Math.PI / 2, 0);
     dummy.scale.set(scale, scale, scale);

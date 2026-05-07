@@ -171,7 +171,7 @@ describe('updateEntities', () => {
     expect(m.matrices[0].elements[15]).toBeCloseTo(expected);
   });
 
-  it('null terrain: entity y = verticalOffset (no terrain lookup)', () => {
+  it('null entityHeights: entity y = verticalOffset (zero height fallback)', () => {
     const scene = new THREE.Scene();
     const mesh = createEntities(scene);
     const state = createInitialViewerState();
@@ -179,30 +179,22 @@ describe('updateEntities', () => {
     state.positions = new Float64Array([100, 200]);
     state.velocities = new Float64Array([1, 0]);
     state.profileIndices = new Int32Array([0]);
-    state.terrain = null;
+    // entityHeights is null — fallback to h=0
     updateEntities(mesh, state);
     const m = mesh as unknown as { matrices: { elements: number[] }[] };
-    // pop 0 coneSize = 4.8, entityVerticalOffsetRatio = 0.5
     const expectedY = config.profileConfig[0].coneSize * config.entityVerticalOffsetRatio;
     expect(m.matrices[0].elements[13]).toBeCloseTo(expectedY);
   });
 
-  it('constant-elevation terrain: entity y = elevation + verticalOffset', () => {
+  it('entityHeights set: entity y = entityHeights[i] + verticalOffset', () => {
     const scene = new THREE.Scene();
     const mesh = createEntities(scene);
     const state = createInitialViewerState();
     state.entityCount = 1;
-    state.positions = new Float64Array([5, 5]); // center of first cell
+    state.positions = new Float64Array([5, 5]);
     state.velocities = new Float64Array([1, 0]);
     state.profileIndices = new Int32Array([0]);
-    state.terrain = {
-      rows: 1,
-      cols: 1,
-      resolution: 10,
-      originX: 0,
-      originY: 0,
-      elevation: new Float64Array([5.0]),
-    };
+    state.entityHeights = new Float32Array([5.0]);
     updateEntities(mesh, state);
     const m = mesh as unknown as { matrices: { elements: number[] }[] };
     const expectedY = 5.0 + config.profileConfig[0].coneSize * config.entityVerticalOffsetRatio;
