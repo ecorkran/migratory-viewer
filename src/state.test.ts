@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applySnapshot, applyStateUpdate, applyTerrain } from './state';
 import { createInitialViewerState } from './types';
-import { MessageType, type ParsedSnapshot, type ParsedStateUpdate, type ParsedTerrain } from './protocol/types';
+import { parseMessage } from './protocol/deserialize';
+import { MessageType, PositionDtype, type ParsedSnapshot, type ParsedStateUpdate, type ParsedTerrain } from './protocol/types';
 
 function makeSnapshot(entityCount: number, tick = 1): ParsedSnapshot {
   return {
@@ -64,7 +65,7 @@ describe('createInitialViewerState', () => {
 });
 
 describe('applySnapshot', () => {
-  it('replaces all relevant fields and retains references to parsed arrays', () => {
+  it('replaces all relevant fields and detaches from the parsed buffers (slice 115)', () => {
     const state = createInitialViewerState();
     const snap = makeSnapshot(3, 42);
     applySnapshot(state, snap);
@@ -72,9 +73,15 @@ describe('applySnapshot', () => {
     expect(state.worldWidth).toBe(1000);
     expect(state.worldHeight).toBe(800);
     expect(state.currentTick).toBe(42);
-    expect(state.positions).toBe(snap.positions);
-    expect(state.velocities).toBe(snap.velocities);
-    expect(state.profileIndices).toBe(snap.profileIndices);
+    // Detach: distinct buffers but matching contents and dtypes.
+    expect(state.positions).not.toBe(snap.positions);
+    expect(state.velocities).not.toBe(snap.velocities);
+    expect(state.profileIndices).not.toBe(snap.profileIndices);
+    expect(state.positions).toBeInstanceOf(Float64Array);
+    expect(state.velocities).toBeInstanceOf(Float64Array);
+    expect(Array.from(state.positions ?? [])).toEqual(Array.from(snap.positions));
+    expect(Array.from(state.velocities ?? [])).toEqual(Array.from(snap.velocities));
+    expect(Array.from(state.profileIndices ?? [])).toEqual(Array.from(snap.profileIndices));
   });
 });
 
@@ -281,5 +288,65 @@ describe('applyTerrain — entityHeights rebake', () => {
     // No snapshot — positions and entityHeights are null
     expect(() => applyTerrain(state, makeTerrain(5.0))).not.toThrow();
     expect(state.entityHeights).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 115: applySnapshot must detach from the WebSocket message buffer.
+// The parser returns views aliasing the wire buffer; if applySnapshot kept
+// the alias, the next onmessage (which reuses the buffer) would silently
+// corrupt state.positions. This test parses a real wire frame, mutates the
+// underlying ArrayBuffer post-apply, and verifies state is unaffected.
+// ---------------------------------------------------------------------------
+
+function buildWireSnapshotF64(
+  tick: number,
+  positions: number[],
+  velocities: number[],
+  profileIndices: number[],
+): ArrayBuffer {
+  const entityCount = profileIndices.length;
+  const totalBytes = 32 + entityCount * 36;
+  const buf = new ArrayBuffer(totalBytes);
+  const view = new DataView(buf);
+  view.setUint8(0, MessageType.SNAPSHOT);
+  view.setUint32(1, tick, true);
+  view.setFloat64(5, 1000, true);
+  view.setFloat64(13, 1000, true);
+  view.setUint32(21, entityCount, true);
+  view.setUint8(25, PositionDtype.F64);
+  view.setUint8(26, 2);
+  let off = 32;
+  for (const v of positions) { view.setFloat64(off, v, true); off += 8; }
+  for (const v of velocities) { view.setFloat64(off, v, true); off += 8; }
+  for (const v of profileIndices) { view.setInt32(off, v, true); off += 4; }
+  return buf;
+}
+
+describe('applySnapshot — wire-buffer detach (slice 115)', () => {
+  it('detaches state buffers from the parsed wire ArrayBuffer', () => {
+    const wireBuffer = buildWireSnapshotF64(1, [10, 20], [1, 2], [7]);
+    const parsed = parseMessage(wireBuffer);
+    if (parsed === null || parsed.type !== MessageType.SNAPSHOT) throw new Error('expected snapshot');
+
+    // Sanity: zero-copy is in effect — the parsed view aliases the wire buffer.
+    expect(parsed.positions.buffer).toBe(wireBuffer);
+
+    const state = createInitialViewerState();
+    applySnapshot(state, parsed);
+
+    // Detach: state must own a different ArrayBuffer.
+    expect(state.positions?.buffer).not.toBe(wireBuffer);
+    expect(state.velocities?.buffer).not.toBe(wireBuffer);
+    expect(state.profileIndices?.buffer).not.toBe(wireBuffer);
+
+    // Mutate the wire buffer at the position-bytes start (offset 32).
+    new Uint8Array(wireBuffer)[32] = 0xff;
+
+    // state.positions must be unaffected by the wire-buffer mutation.
+    expect(state.positions?.[0]).toBe(10);
+    expect(state.positions?.[1]).toBe(20);
+    expect(state.velocities?.[0]).toBe(1);
+    expect(state.profileIndices?.[0]).toBe(7);
   });
 });

@@ -23,14 +23,22 @@ function bakeEntityHeights(state: ViewerState): void {
   }
 }
 
-/** Apply a SNAPSHOT message: replace world bounds, entity count, and all per-entity arrays. */
+/**
+ * Apply a SNAPSHOT message: replace world bounds, entity count, and all
+ * per-entity arrays. Detaches via `.slice()` because slice 115's parser
+ * returns views aliasing the WebSocket message buffer, which the browser
+ * reuses on the next `onmessage`. `.slice()` on a typed-array view returns
+ * a new typed array of the same kind (Float32→Float32, Float64→Float64,
+ * Int32→Int32) backed by its own ArrayBuffer — exactly the detach we need,
+ * with no explicit branch on dtype.
+ */
 export function applySnapshot(state: ViewerState, parsed: ParsedSnapshot): void {
   state.worldWidth = parsed.worldWidth;
   state.worldHeight = parsed.worldHeight;
   state.entityCount = parsed.entityCount;
-  state.positions = parsed.positions;
-  state.velocities = parsed.velocities;
-  state.profileIndices = parsed.profileIndices;
+  state.positions = parsed.positions.slice();
+  state.velocities = parsed.velocities.slice();
+  state.profileIndices = parsed.profileIndices.slice();
   state.currentTick = parsed.tick;
   state.entityHeights = new Float32Array(parsed.entityCount);
   bakeEntityHeights(state);
