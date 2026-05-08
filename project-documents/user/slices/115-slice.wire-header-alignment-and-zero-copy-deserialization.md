@@ -9,7 +9,7 @@ dependencies:
 interfaces: []
 dateCreated: 20260507
 dateUpdated: 20260508
-status: not_started
+status: complete
 effort: 2
 ---
 
@@ -400,10 +400,22 @@ schema_version mismatch). That's acceptable because:
 pnpm test
 ```
 
-Expected: `Test Files 9 passed (9)`. Test count is 134 (post-slice-113 baseline)
-plus the new tests above; the 5–7 STATE_UPDATE / SNAPSHOT fixture tests added
-under slice 114 are updated in place to use the new builders, so total grows by
-~6–8 net new tests.
+Actual (slice 115 implementation):
+
+```
+ Test Files  9 passed (9)
+      Tests  145 passed (145)
+```
+
+Note: pre-slice baseline was 134 tests. Slice 115 adds 11 net new tests
+(WIRE_SCHEMA_VERSION constant assertion; 2 STATE_UPDATE buffer-identity
+tests f32+f64; 3 STATE_UPDATE schema_version + reserved-byte tests;
+2 SNAPSHOT buffer-identity tests f32+f64; 3 SNAPSHOT schema_version +
+reserved-byte tests; 1 applySnapshot wire-buffer detach end-to-end test)
+and removes 1 obsolete test ("returns typed-array copies independent
+from the source buffer") that asserted the v1 detach-by-`buffer.slice()`
+contract — that contract is now inverted (parser intentionally returns
+views; detachment is the state layer's job). Net delta: 134 → 145 (+11).
 
 **2. Type-check clean.**
 
@@ -411,11 +423,15 @@ under slice 114 are updated in place to use the new builders, so total grows by
 pnpm tsc --noEmit
 ```
 
-Expected: zero errors.
+Actual: exits 0, no output.
 
 **3. Inspect the parser output directly (manual REPL or test harness).**
 
-In a vitest test or a debug invocation:
+The buffer-identity contract is pinned by automated tests in
+`src/protocol/deserialize.test.ts` (describe blocks
+`parseStateUpdate — zero-copy buffer identity (slice 115)` and
+`parseSnapshot — zero-copy buffer identity (slice 115)`). For interactive
+inspection in a vitest test or debug invocation:
 
 ```typescript
 const buf = buildStateUpdate(42, [1, 2, 3, 4], [0, 0, 0, 0], PositionDtype.F32);
@@ -446,12 +462,40 @@ Open the viewer, connect to the server. Confirm:
 - DevTools → Memory → Allocations: per-tick allocation rate is materially lower than
   pre-slice (no per-tick `ArrayBuffer.slice()` allocations).
 
+Actual (smoke tested by Project Manager during T20): viewer connected to the
+v2 server cleanly, rendered correctly, no protocol warnings. PM observation
+recorded: further allocation/throughput optimization beyond this point would
+require either WebTransport (replacing the WebSocket carrier) or a non-browser
+viewer architecture that can use shared memory / mmap (i.e. the deferred
+slice 322 path). Captured in Future Work.
+
 **5. Negative-case version drift (covered by automated tests).**
 
 The unit tests above (rejecting `schema_version = 1` / `3`) prove the strict-version
 check is wired correctly. No live server is needed — wire drift would produce the
 same "stalled HUD, console floods with `[protocol] schema_version` warnings"
 symptom in production, by design.
+
+### Caveats discovered during implementation
+
+- **Fixture migration was broader than the task file scoped.** T6 was written
+  as "update `buildStateUpdate` in `deserialize.test.ts`" but three other test
+  files carry their own copies of `buildSnapshot` / `buildStateUpdate`
+  (`terrain-assembler.test.ts`, `terrain-assembler-chunked.test.ts`,
+  `net/connection.test.ts`). All four had to migrate together for tests to
+  stay green at the T9 commit boundary. Future work: extract these builders
+  into a shared `_test-helpers.ts` (alongside the terrain frame builders that
+  already live there) so a future header bump only touches one place.
+- **Commit boundaries T9 and T15 were partially merged.** The deserialize.ts
+  file edit changes both parsers in one pass, and the fixture migrations span
+  both message types — tests stay green only as a unit. T9 ended up containing
+  both parser changes plus all fixture migrations plus the STATE_UPDATE-only
+  tests; T15 contained only the SNAPSHOT-specific tests added afterward. The
+  net history is still clean and bisectable.
+- **One v1-era test was removed** (was: "returns typed-array copies
+  independent from the source buffer" in `parseSnapshot`). It asserted the
+  reverse of the new contract. The replacement coverage is the buffer-identity
+  tests (T7, T13) plus the wire-buffer-detach test (T17).
 
 ## Implementation Notes
 
