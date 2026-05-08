@@ -23,14 +23,16 @@ import { MessageType, PositionDtype, TerrainCompression, type TerrainCompression
 
 function buildStateUpdate(tick: number, positions: number[], velocities: number[]): ArrayBuffer {
   const entityCount = positions.length / 2;
-  // 10-byte header + f64 payload (32 bytes/entity)
-  const buf = new ArrayBuffer(10 + entityCount * 32);
+  // 16-byte header + f64 payload (32 bytes/entity).
+  // schema_version=2 at offset 10; bytes 11-15 reserved (zero-filled).
+  const buf = new ArrayBuffer(16 + entityCount * 32);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.STATE_UPDATE);
   view.setUint32(1, tick, true);
   view.setUint32(5, entityCount, true);
   view.setUint8(9, PositionDtype.F64);
-  let off = 10;
+  view.setUint8(10, 2);
+  let off = 16;
   for (const v of positions) { view.setFloat64(off, v, true); off += 8; }
   for (const v of velocities) { view.setFloat64(off, v, true); off += 8; }
   return buf;

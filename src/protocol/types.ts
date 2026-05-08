@@ -26,6 +26,13 @@ export const PositionDtype = {
 
 export type PositionDtypeValue = (typeof PositionDtype)[keyof typeof PositionDtype];
 
+/**
+ * Migratory wire-protocol schema version. Bumped to 2 by slice 321 (header
+ * alignment + zero-copy). Distinct from the mmap region's schema version,
+ * which lives in slice 322 and is not consumed by the browser viewer.
+ */
+export const WIRE_SCHEMA_VERSION = 2 as const;
+
 /** Terrain payload compression algorithm, encoded in flags bits 2-4. */
 export const TerrainCompression = {
   NONE: 0,

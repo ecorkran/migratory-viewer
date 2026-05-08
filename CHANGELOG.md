@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 20260508
+
+### Performance (slice 115 — Wire Header Alignment + Zero-Copy Deserialization)
+- The viewer now reads STATE_UPDATE positions and velocities directly out of
+  the WebSocket message buffer instead of copying them. At 100k entities
+  the per-tick parse step no longer allocates ~1.6 MB of throwaway buffers,
+  removing the dominant source of GC pressure in the receive path.
+- This required a coordinated server-side change: the producer pads its
+  STATE_UPDATE header to 16 bytes and its SNAPSHOT header to 32 bytes so
+  position arrays start at offsets the browser can construct typed-array
+  views over. Without that alignment the optimization is impossible.
+- This unblocks the third optimization that was attempted and reverted in
+  slice 113 — the original 10-byte STATE_UPDATE header was not 4- or 8-byte
+  aligned, so `Float32Array` / `Float64Array` views over the wire buffer
+  threw `RangeError` and the work had to be deferred until the wire format
+  could be changed.
+
+### Compatibility
+- The viewer now requires a server emitting wire schema version 2 (producer
+  shipped on commit `9e7526d`). There is no compatibility window: an older
+  viewer connected to a v2 server (or vice versa) will see a stalled HUD
+  with `[protocol] schema_version` warnings in the browser console. Update
+  both sides together.
+
 ## [0.0.6] - 20260507
 
 ### Performance (slice 113 — Entity Pipeline Performance)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MessageType, TerrainCompression, TerrainDtype } from './types';
+import { MessageType, TerrainCompression, TerrainDtype, WIRE_SCHEMA_VERSION } from './types';
 
 describe('protocol constants', () => {
   it('MessageType pins every opcode byte', () => {
@@ -26,5 +26,9 @@ describe('protocol constants', () => {
       ZSTD: 1,
       LZ4: 2,
     });
+  });
+
+  it('WIRE_SCHEMA_VERSION pins the wire schema version', () => {
+    expect(WIRE_SCHEMA_VERSION).toBe(2);
   });
 });

@@ -39,9 +39,10 @@ class MockWebSocket {
 }
 
 function buildSnapshot(tick: number, entityCount: number): ArrayBuffer {
-  // 26-byte header: type(1) + tick(4) + worldWidth(8) + worldHeight(8) + entityCount(4) + dtype(1)
+  // v2 32-byte header: type(1) + tick(4) + worldWidth(8) + worldHeight(8) +
+  //   entityCount(4) + dtype(1) + schema_version(1) + 5 reserved
   // f64 payload: 36 bytes/entity (32 pos+vel + 4 profile idx)
-  const buf = new ArrayBuffer(26 + entityCount * 36);
+  const buf = new ArrayBuffer(32 + entityCount * 36);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.SNAPSHOT);
   view.setUint32(1, tick, true);
@@ -49,18 +50,21 @@ function buildSnapshot(tick: number, entityCount: number): ArrayBuffer {
   view.setFloat64(13, 100, true);
   view.setUint32(21, entityCount, true);
   view.setUint8(25, 0x00); // PositionDtype.F64
+  view.setUint8(26, 2); // schema_version
   return buf;
 }
 
 function buildStateUpdate(tick: number, entityCount: number): ArrayBuffer {
-  // 10-byte header: type(1) + tick(4) + entityCount(4) + dtype(1)
+  // v2 16-byte header: type(1) + tick(4) + entityCount(4) + dtype(1) +
+  //   schema_version(1) + 5 reserved
   // f64 payload: 32 bytes/entity
-  const buf = new ArrayBuffer(10 + entityCount * 32);
+  const buf = new ArrayBuffer(16 + entityCount * 32);
   const view = new DataView(buf);
   view.setUint8(0, MessageType.STATE_UPDATE);
   view.setUint32(1, tick, true);
   view.setUint32(5, entityCount, true);
   view.setUint8(9, 0x00); // PositionDtype.F64
+  view.setUint8(10, 2); // schema_version
   return buf;
 }
 
