@@ -12,6 +12,7 @@ import config from '../config';
 import {
   MessageType,
   PositionDtype,
+  WIRE_SCHEMA_VERSION,
   type ParsedMessage,
   type ParsedSnapshot,
   type ParsedStateUpdate,
@@ -29,10 +30,10 @@ function readF64LE(view: DataView, offset: number): number {
   return view.getFloat64(offset, true);
 }
 
-const SNAPSHOT_HEADER_BYTES = 26;
+const SNAPSHOT_HEADER_BYTES = 32;
 const SNAPSHOT_PER_ENTITY_BYTES_F64 = 36; // 32 pos+vel (f64) + 4 profile
 const SNAPSHOT_PER_ENTITY_BYTES_F32 = 20; // 16 pos+vel (f32) + 4 profile
-const STATE_UPDATE_HEADER_BYTES = 10;
+const STATE_UPDATE_HEADER_BYTES = 16;
 const STATE_UPDATE_PER_ENTITY_BYTES_F64 = 32; // 32 pos+vel (f64)
 const STATE_UPDATE_PER_ENTITY_BYTES_F32 = 16; // 16 pos+vel (f32)
 
@@ -75,9 +76,18 @@ export function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapsh
   const worldHeight = readF64LE(view, 13);
   const entityCount = readU32LE(view, 21);
   const dtype = readU8(view, 25);
+  const schemaVersion = readU8(view, 26);
+  // Bytes 27-31 are reserved (forward-compat); parser must not validate them.
 
   if (dtype !== PositionDtype.F64 && dtype !== PositionDtype.F32) {
     console.warn(`[protocol] unknown position dtype: 0x${dtype.toString(16).padStart(2, '0')}`);
+    return null;
+  }
+
+  if (schemaVersion !== WIRE_SCHEMA_VERSION) {
+    console.warn(
+      `[protocol] snapshot unsupported schema version: 0x${schemaVersion.toString(16).padStart(2, '0')}`,
+    );
     return null;
   }
 
@@ -90,8 +100,6 @@ export function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapsh
 
   const perEntityBytes =
     dtype === PositionDtype.F32 ? SNAPSHOT_PER_ENTITY_BYTES_F32 : SNAPSHOT_PER_ENTITY_BYTES_F64;
-  // perEntityBytes includes pos+vel (posVelBytes) + 4 bytes for profile index
-  const posVelBytes = perEntityBytes - 4;
   const expectedBytes = SNAPSHOT_HEADER_BYTES + entityCount * perEntityBytes;
   if (buffer.byteLength !== expectedBytes) {
     console.warn(
@@ -100,22 +108,24 @@ export function parseSnapshot(buffer: ArrayBuffer, view: DataView): ParsedSnapsh
     return null;
   }
 
+  // Zero-copy: returned typed arrays alias the WebSocket message buffer.
+  // `applySnapshot` is responsible for detaching via `.slice()` before the
+  // browser reuses the buffer on the next `onmessage`.
+  const componentCount = entityCount * 2;
+  const dtypeBytes = dtype === PositionDtype.F32 ? 4 : 8;
   const posOffset = SNAPSHOT_HEADER_BYTES;
-  const perComponentBytes = posVelBytes / 4; // bytes per component (x or y for one entity)
-  const velOffset = posOffset + entityCount * perComponentBytes * 2;
-  const idxOffset = velOffset + entityCount * perComponentBytes * 2;
+  const velOffset = posOffset + componentCount * dtypeBytes;
+  const idxOffset = velOffset + componentCount * dtypeBytes;
 
-  // Copy: detach from the WebSocket message buffer so reuse on the next tick is safe.
-  const posByteLen = entityCount * perComponentBytes * 2;
   const positions =
     dtype === PositionDtype.F32
-      ? new Float32Array(buffer.slice(posOffset, posOffset + posByteLen))
-      : new Float64Array(buffer.slice(posOffset, posOffset + posByteLen));
+      ? new Float32Array(buffer, posOffset, componentCount)
+      : new Float64Array(buffer, posOffset, componentCount);
   const velocities =
     dtype === PositionDtype.F32
-      ? new Float32Array(buffer.slice(velOffset, velOffset + posByteLen))
-      : new Float64Array(buffer.slice(velOffset, velOffset + posByteLen));
-  const profileIndices = new Int32Array(buffer.slice(idxOffset, idxOffset + entityCount * 4));
+      ? new Float32Array(buffer, velOffset, componentCount)
+      : new Float64Array(buffer, velOffset, componentCount);
+  const profileIndices = new Int32Array(buffer, idxOffset, entityCount);
 
   return {
     type: MessageType.SNAPSHOT,
@@ -139,9 +149,18 @@ export function parseStateUpdate(buffer: ArrayBuffer, view: DataView): ParsedSta
   const tick = readU32LE(view, 1);
   const entityCount = readU32LE(view, 5);
   const dtype = readU8(view, 9);
+  const schemaVersion = readU8(view, 10);
+  // Bytes 11-15 are reserved (forward-compat); parser must not validate them.
 
   if (dtype !== PositionDtype.F64 && dtype !== PositionDtype.F32) {
     console.warn(`[protocol] unknown position dtype: 0x${dtype.toString(16).padStart(2, '0')}`);
+    return null;
+  }
+
+  if (schemaVersion !== WIRE_SCHEMA_VERSION) {
+    console.warn(
+      `[protocol] state update unsupported schema version: 0x${schemaVersion.toString(16).padStart(2, '0')}`,
+    );
     return null;
   }
 
@@ -164,19 +183,23 @@ export function parseStateUpdate(buffer: ArrayBuffer, view: DataView): ParsedSta
     return null;
   }
 
+  // Zero-copy: the returned typed arrays alias the WebSocket message buffer.
+  // The browser reuses that buffer on the next `onmessage`, so callers must
+  // copy before yielding to the event loop. `applyStateUpdate` already copies
+  // via `.set()`; `applySnapshot` copies via `.slice()`.
+  const componentCount = entityCount * 2;
+  const dtypeBytes = dtype === PositionDtype.F32 ? 4 : 8;
   const posOffset = STATE_UPDATE_HEADER_BYTES;
-  const perComponentBytes = perEntityBytes / 4; // bytes per component (x or y for one entity)
-  const velOffset = posOffset + entityCount * perComponentBytes * 2;
-  const posByteLen = entityCount * perComponentBytes * 2;
+  const velOffset = posOffset + componentCount * dtypeBytes;
 
   const positions =
     dtype === PositionDtype.F32
-      ? new Float32Array(buffer.slice(posOffset, posOffset + posByteLen))
-      : new Float64Array(buffer.slice(posOffset, posOffset + posByteLen));
+      ? new Float32Array(buffer, posOffset, componentCount)
+      : new Float64Array(buffer, posOffset, componentCount);
   const velocities =
     dtype === PositionDtype.F32
-      ? new Float32Array(buffer.slice(velOffset, velOffset + posByteLen))
-      : new Float64Array(buffer.slice(velOffset, velOffset + posByteLen));
+      ? new Float32Array(buffer, velOffset, componentCount)
+      : new Float64Array(buffer, velOffset, componentCount);
 
   return {
     type: MessageType.STATE_UPDATE,
