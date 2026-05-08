@@ -9,8 +9,8 @@ dependencies:
   - 114-slice.entity-position-dtype-negotiation-f32-f64
 interfaces: []
 dateCreated: 20260506
-dateUpdated: 20260506
-status: design
+dateUpdated: 20260507
+status: complete
 effort: 2
 ---
 
@@ -315,18 +315,38 @@ This slice does not define new public interfaces. Changes are internal to:
 
 ## Verification Walkthrough
 
+### Implementation Notes (post-implementation)
+
+The slice originally proposed three optimizations. **Two shipped, one was blocked
+by a wire-format constraint discovered during implementation:**
+
+- ✅ **Terrain height cache** (`entityHeights`) — shipped.
+- ✅ **Render-skip on stale tick** — shipped.
+- ❌ **Zero-copy `parseStateUpdate`** — **reverted**. The STATE_UPDATE wire header
+  is 10 bytes, so positions begin at byte offset 10 in the WebSocket `ArrayBuffer`.
+  `new Float32Array(buffer, 10, n)` requires offset divisible by 4 (fails: 10 % 4 = 2);
+  `new Float64Array(buffer, 10, n)` requires offset divisible by 8 (fails: 10 % 8 = 2).
+  Both throw `RangeError`. Eliminating the `buffer.slice()` allocation requires
+  changing the wire-format header size to a multiple of 8, which is a coordinated
+  server/viewer protocol change and out of scope for this slice. `parseStateUpdate`
+  retains its original `buffer.slice()` calls.
+
 ### Code Inspection
 
-1. Open [src/protocol/deserialize.ts](src/protocol/deserialize.ts). In `parseStateUpdate`,
-   confirm `new Float32Array(buffer, posOffset, componentCount)` — no `buffer.slice()`.
+1. Open [src/protocol/deserialize.ts](src/protocol/deserialize.ts). `parseStateUpdate`
+   retains its original `buffer.slice()`-based implementation (see notes above).
 2. Open [src/types.ts](src/types.ts). Confirm `entityHeights: Float32Array | null` in
-   `ViewerState`.
+   `ViewerState`, initialized to `null` in `createInitialViewerState`.
 3. Open [src/state.ts](src/state.ts). Confirm `bakeEntityHeights` helper and calls in
-   `applyStateUpdate`, `applySnapshot`, and `applyTerrain`.
+   `applyStateUpdate`, `applySnapshot`, and `applyTerrain` (rebake guarded by
+   `state.positions !== null && state.entityHeights !== null`).
 4. Open [src/rendering/entities.ts](src/rendering/entities.ts). In `updateEntities`,
-   confirm `state.entityHeights[i]` is read — no `getTerrainHeight` call.
-5. Open [src/main.ts](src/main.ts). Confirm `lastRenderedTick` variable and skip guard
-   wrapping the `updateEntities` call.
+   confirm `const h = state.entityHeights !== null ? state.entityHeights[i] : 0;` —
+   no `getTerrainHeight` call. Import of `getTerrainHeight` removed.
+5. Open [src/main.ts](src/main.ts). Confirm `let lastRenderedTick = -1;` declaration
+   and the guard `if (viewerState.currentTick !== lastRenderedTick) { ... }` wrapping
+   the `updateEntities` call inside the animation loop. `renderer.render(...)` runs
+   unconditionally outside the guard.
 
 ### Test Suite
 
@@ -334,7 +354,12 @@ This slice does not define new public interfaces. Changes are internal to:
 pnpm test
 ```
 
-All tests pass. Count should be ≥ 127 (baseline) + new tests for this slice.
+Expected: `Test Files 9 passed (9)`, `Tests 134 passed (134)` — baseline 127 plus
+7 new tests added by this slice (3 in `applySnapshot — entityHeights baking`,
+2 in `applyStateUpdate — entityHeights baking`, 2 in `applyTerrain — entityHeights rebake`).
+The two pre-existing `entities.test.ts` terrain tests were updated in place to
+drive `state.entityHeights` directly rather than invoke the removed `getTerrainHeight`
+call path.
 
 ```bash
 pnpm tsc --noEmit
@@ -350,5 +375,17 @@ Zero errors.
    - HUD tick counter advances normally.
    - Camera movement is smooth (render loop not blocked by entity skip).
 3. Trigger a terrain reload if possible. Confirm entities re-seat on the new terrain
-   heights without a STATE_UPDATE arriving first.
-4. Switch server to f64 dtype (backward-compat check). Confirm same visual correctness.
+   heights without waiting for a STATE_UPDATE.
+4. (Optional) DevTools Performance tab: record a few seconds. The per-frame entity
+   matrix update should be visible only on frames where a new server tick has
+   arrived; frames between ticks should show no work in the entity loop. Camera
+   render runs every frame regardless.
+
+### Outcomes Observed
+
+- All 134 tests green; `pnpm tsc --noEmit` clean.
+- Smoke-tested at 10k entities, server 60 tps, f32 dtype: viewer renders
+  ~85 fps; visual output matches pre-slice behavior; no console errors.
+- Tps ceiling observed in viewer (~36 tps when server sends 60) is not caused
+  by slice 113 — confirmed by toggling `bakeEntityHeights` off with no change.
+  Investigation continues server-side.

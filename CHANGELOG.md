@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 20260507
+
+### Performance (slice 113 — Entity Pipeline Performance)
+- Entity terrain heights are now cached on `ViewerState.entityHeights` and
+  refreshed when the server sends new positions or terrain. Previously the
+  viewer re-ran a bilinear terrain interpolation for every entity on every
+  rendered frame — at 100k entities and 60 fps that was 6M interpolations/sec
+  of redundant work. The render path now reads from a flat array.
+- The render loop skips re-applying entity matrices on frames where no new
+  server tick has arrived. The camera and scene continue to render every
+  frame for smooth motion; only the per-entity matrix loop is gated. At a
+  60 fps display with a 60 tps server, the matrix loop runs once per tick
+  instead of once per frame.
+
+### Notes
+- A third planned optimization (zero-copy `parseStateUpdate`) was attempted
+  and reverted. The STATE_UPDATE wire header is 10 bytes, which is not
+  aligned to 4 bytes (Float32Array) or 8 bytes (Float64Array), so direct
+  typed-array views into the WebSocket buffer throw `RangeError`. Eliminating
+  the per-tick allocation requires a coordinated wire-format change and is
+  deferred.
+
 ## [0.0.5] - 20260506
 
 ### Added
