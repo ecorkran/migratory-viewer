@@ -216,6 +216,90 @@ describe('parseSnapshot — f32 and unknown dtype', () => {
   });
 });
 
+describe('parseSnapshot — zero-copy buffer identity (slice 115)', () => {
+  it('f32: positions/velocities/profileIndices are views aliasing the wire buffer at offset 32', () => {
+    const positions = [1.5, -2.5, 3.5, -4.5, 5.5, -6.5, 7.5, -8.5];
+    const velocities = [0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4];
+    const profiles = [10, 20, 30, 40];
+    const buf = buildSnapshot(33, 1000, 1000, positions, velocities, profiles, PositionDtype.F32);
+    const result = parseMessage(buf);
+    if (result === null || result.type !== MessageType.SNAPSHOT) throw new Error('expected snapshot');
+    expect(result.entityCount).toBe(4);
+    expect(result.positions).toBeInstanceOf(Float32Array);
+    expect(result.positions.buffer).toBe(buf);
+    expect(result.positions.byteOffset).toBe(32);
+    expect(result.positions.length).toBe(8);
+    expect(result.velocities).toBeInstanceOf(Float32Array);
+    expect(result.velocities.buffer).toBe(buf);
+    expect(result.velocities.byteOffset).toBe(32 + 8 * 4);
+    expect(result.profileIndices).toBeInstanceOf(Int32Array);
+    expect(result.profileIndices.buffer).toBe(buf);
+    expect(result.profileIndices.byteOffset).toBe(32 + 8 * 4 + 8 * 4);
+    for (let i = 0; i < positions.length; i++) {
+      expect(result.positions[i]).toBeCloseTo(positions[i], 5);
+      expect(result.velocities[i]).toBeCloseTo(velocities[i], 5);
+    }
+    expect(Array.from(result.profileIndices)).toEqual(profiles);
+  });
+
+  it('f64: positions/velocities/profileIndices are views aliasing the wire buffer at offset 32', () => {
+    const positions = [1.5, -2.5, 3.5, -4.5, 5.5, -6.5, 7.5, -8.5];
+    const velocities = [0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4];
+    const profiles = [11, 22, 33, 44];
+    const buf = buildSnapshot(44, 2000, 2000, positions, velocities, profiles, PositionDtype.F64);
+    const result = parseMessage(buf);
+    if (result === null || result.type !== MessageType.SNAPSHOT) throw new Error('expected snapshot');
+    expect(result.entityCount).toBe(4);
+    expect(result.positions).toBeInstanceOf(Float64Array);
+    expect(result.positions.buffer).toBe(buf);
+    expect(result.positions.byteOffset).toBe(32);
+    expect(result.positions.length).toBe(8);
+    expect(result.velocities).toBeInstanceOf(Float64Array);
+    expect(result.velocities.buffer).toBe(buf);
+    expect(result.velocities.byteOffset).toBe(32 + 8 * 8);
+    expect(result.profileIndices).toBeInstanceOf(Int32Array);
+    expect(result.profileIndices.buffer).toBe(buf);
+    expect(result.profileIndices.byteOffset).toBe(32 + 8 * 8 + 8 * 8);
+    expect(Array.from(result.positions)).toEqual(positions);
+    expect(Array.from(result.velocities)).toEqual(velocities);
+    expect(Array.from(result.profileIndices)).toEqual(profiles);
+  });
+});
+
+describe('parseSnapshot — schema_version validation (slice 115)', () => {
+  it('rejects schema_version = 1 with a console warning', () => {
+    const buf = buildSnapshot(1, 100, 100, [1, 2], [0, 0], [0], PositionDtype.F64, 1);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseMessage(buf)).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith('[protocol] snapshot unsupported schema version: 0x01');
+    warnSpy.mockRestore();
+  });
+
+  it('rejects schema_version = 3 with a console warning', () => {
+    const buf = buildSnapshot(1, 100, 100, [1, 2], [0, 0], [0], PositionDtype.F64, 3);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseMessage(buf)).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith('[protocol] snapshot unsupported schema version: 0x03');
+    warnSpy.mockRestore();
+  });
+
+  it('accepts non-zero reserved bytes 27-31 (forward-compat)', () => {
+    const buf = buildSnapshot(7, 100, 100, [9, 8], [7, 6], [5], PositionDtype.F64, WIRE_SCHEMA_VERSION);
+    const bytes = new Uint8Array(buf);
+    bytes[27] = 0xaa;
+    bytes[28] = 0xbb;
+    bytes[29] = 0xcc;
+    bytes[30] = 0xdd;
+    bytes[31] = 0xee;
+    const result = parseMessage(buf);
+    if (result === null || result.type !== MessageType.SNAPSHOT) throw new Error('expected snapshot');
+    expect(result.tick).toBe(7);
+    expect(Array.from(result.positions)).toEqual([9, 8]);
+    expect(Array.from(result.velocities)).toEqual([7, 6]);
+    expect(Array.from(result.profileIndices)).toEqual([5]);
+  });
+});
+
 describe('parseStateUpdate', () => {
   it('parses a f64 state update — explicit round-trip', () => {
     const buf = buildStateUpdate(99, [10, 20, 30, 40], [1, 2, 3, 4], PositionDtype.F64);
